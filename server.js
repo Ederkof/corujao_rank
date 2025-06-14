@@ -7,7 +7,7 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 4040;
 
-// --- 1. CONEXÃO COM O MONGODB LOCAL ---
+// --- 1. CONEXÃO COM O MONGODB LOCAL OU ATLAS ---
 const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/backend_global';
 mongoose.connect(mongoUri)
   .then(() => console.log('Conectado ao MongoDB com sucesso!'))
@@ -82,12 +82,27 @@ app.get('/api/teste', (req, res) => {
   res.json({ mensagem: "API funcionando!" });
 });
 
-// --- 7. SEMPRE SERVIR O FRONTEND NA HOME ---
+// --- 7. ROTA PARA PEGAR USUÁRIO LOGADO (SESSÃO) ---
+app.get('/api/me', async (req, res) => {
+  if (!req.session.userId) return res.json({});
+  const user = await User.findById(req.session.userId);
+  if (!user) return res.json({});
+  res.json({ username: user.username, role: user.role });
+});
+
+// --- 8. LOGOUT ---
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ message: "Logout feito com sucesso." });
+  });
+});
+
+// --- 9. SERVE O FRONTEND NA HOME ---
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// --- 8. INICIALIZA O SERVIDOR ---
+// --- 10. INICIA O SERVIDOR ---
 app.listen(PORT, () => {
   console.log(`Servidor Corujão rodando na porta ${PORT}`);
 });
