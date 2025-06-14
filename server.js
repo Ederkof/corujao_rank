@@ -1,3 +1,4 @@
+// ===== BACKEND AUTENTICAÇÃO BÁSICA NODEJS/MONGODB =====
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
@@ -6,7 +7,7 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 4040;
 
-// Conexão com MongoDB
+// --- 1. CONEXÃO COM O MONGODB LOCAL ---
 const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/backend_global';
 mongoose.connect(mongoUri)
   .then(() => console.log('Conectado ao MongoDB com sucesso!'))
@@ -15,16 +16,16 @@ mongoose.connect(mongoUri)
     process.exit(1);
   });
 
-// Definição do modelo User
+// --- 2. MODELO DE USUÁRIO ---
 const userSchema = new mongoose.Schema({
-  username: String,
+  username: { type: String, unique: true },
   password: String,
   role: { type: String, default: 'user' },
   permissions: [String]
 });
 const User = mongoose.model('User', userSchema);
 
-// Middlewares
+// --- 3. MIDDLEWARES GLOBAIS ---
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -34,7 +35,7 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// Função PATCH UNIVERSAL: Garante Ederkof como admin
+// --- 4. PATCH UNIVERSAL: EDERKOF É SEMPRE ADMIN ---
 async function patchEderkofAdmin(user) {
   if (user.username === "ederkof") {
     user.role = "admin";
@@ -43,7 +44,9 @@ async function patchEderkofAdmin(user) {
   }
 }
 
-// Rota de registro
+// --- 5. ROTAS DE AUTENTICAÇÃO ---
+
+// REGISTRO
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Usuário e senha obrigatórios.' });
@@ -60,7 +63,7 @@ app.post('/api/register', async (req, res) => {
   res.json({ message: 'Usuário registrado!', username: user.username });
 });
 
-// Rota de login
+// LOGIN
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   const user = await User.findOne({ username });
@@ -74,14 +77,17 @@ app.post('/api/login', async (req, res) => {
   res.json({ message: 'Login realizado!', username: user.username });
 });
 
-// Outras rotas da sua API podem ser adicionadas aqui...
+// --- 6. ROTA DE TESTE (opcional) ---
+app.get('/api/teste', (req, res) => {
+  res.json({ mensagem: "API funcionando!" });
+});
 
-// Sempre servir o chat visual na home
+// --- 7. SEMPRE SERVIR O FRONTEND NA HOME ---
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Inicializa o servidor
+// --- 8. INICIALIZA O SERVIDOR ---
 app.listen(PORT, () => {
   console.log(`Servidor Corujão rodando na porta ${PORT}`);
 });
