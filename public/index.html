@@ -2,16 +2,479 @@
 <html lang="pt-br">
 <head>
   <meta charset="UTF-8">
-  <title>Corujão Online</title>
+  <title>Corujão Terminal</title>
+  <link href="https://fonts.googleapis.com/css2?family=Electrolize&display=swap" rel="stylesheet">
   <style>
-    body { font-family: Arial, sans-serif; background: #181818; color: #fff; text-align: center; padding-top: 10vh; }
-    h1 { font-size: 3em; }
-    .emoji { font-size: 5em; }
+    :root {
+      --fundo: #181c1f;
+      --fundo-central: #23272e;
+      --bordas: #23282e;
+      --texto: #e0e0e0;
+      --verde: #a8ff60;
+      --verde2: #99e887;
+      --azul-nick: #67aaff;
+      --dourado-nick: #ffe066;
+      --header: #23282e;
+      --input-bg: transparent;
+      --input-fg: #fff;
+      --footer-bg: #1a1d1e;
+      --footer-fg: #99e887;
+      --footer-cmd: #99e887;
+      --event-torneio: #ffb347;
+      --event-desafio: #7ed957;
+      --event-quiz: #67aaff;
+    }
+    .claro {
+      --fundo: #f5f6fa;
+      --fundo-central: #fff;
+      --bordas: #dbe2ea;
+      --texto: #222;
+      --verde: #25432e;
+      --verde2: #1a3c20;
+      --azul-nick: #1a3c60;
+      --dourado-nick: #b39c23;
+      --header: #e0ffe0;
+      --input-bg: #e0eae0;
+      --input-fg: #222;
+      --footer-bg: #e0ffe0;
+      --footer-fg: #1a3c20;
+      --footer-cmd: #1a3c20;
+      --event-torneio: #db8714;
+      --event-desafio: #2e7d32;
+      --event-quiz: #25432e;
+    }
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: var(--fundo);
+      color: var(--texto);
+      font-family: 'Electrolize', monospace;
+      font-size: 1.12em;
+      width: 100vw;
+      height: 100vh;
+      box-sizing: border-box;
+    }
+    #layout {
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+    }
+    #sidebar-esq, #sidebar-dir {
+      width: 170px;
+      background: var(--fundo);
+      border-right: 2px solid var(--bordas);
+      border-left: 2px solid var(--bordas);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      font-size: 1em;
+      padding: 18px 10px 18px 14px;
+      min-width: 120px;
+      max-width: 210px;
+    }
+    #sidebar-esq { border-left: none; }
+    #sidebar-dir { border-right: none; }
+    #sidebar-esq .titulo, #sidebar-dir .titulo {
+      color: var(--verde2);
+      font-weight: bold;
+      font-size: 1.05em;
+      margin-bottom: 3px;
+      letter-spacing: 0.02em;
+    }
+    #sidebar-esq ul, #sidebar-dir ul {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 10px 0;
+    }
+    #sidebar-esq li, #sidebar-dir li {
+      padding: 6px 0 6px 8px;
+      cursor: pointer;
+      color: var(--texto);
+      border-bottom: 1px solid var(--bordas);
+      border-radius: 2px;
+      transition: background 0.18s, color 0.16s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #sidebar-esq li:hover, #sidebar-dir li:hover {
+      background: var(--header);
+      color: var(--verde2);
+    }
+    #main {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: var(--fundo);
+      height: 100vh;
+      justify-content: stretch;
+      align-items: stretch;
+      overflow: hidden;
+    }
+    #chat-central {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+      background: var(--fundo-central);
+      border: 2px solid var(--bordas);
+      border-radius: 9px;
+      box-shadow: 0 4px 24px #0003;
+      margin: 18px 0 18px 0;
+      min-width: 0;
+      min-height: 0;
+    }
+    #terminal-header {
+      background: var(--header);
+      color: var(--verde2);
+      padding: 7px 16px 5px 18px;
+      font-weight: bold;
+      border-bottom: 1px solid var(--bordas);
+      font-size: 1.01em;
+      letter-spacing: 0.01em;
+      text-align: left;
+      border-top-left-radius: 7px;
+      border-top-right-radius: 7px;
+      transition: background 0.2s;
+    }
+    #chat-list {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      padding: 8px 20px 8px 20px;
+      margin: 0;
+      list-style: none;
+      font-size: 1em;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: transparent;
+      border-radius: 0;
+      min-height: 25px;
+      max-height: none;
+    }
+    .msg-voce {
+      color: var(--texto);
+      font-weight: 500;
+    }
+    .msg-sistema, .msg-evento {
+      color: var(--msg-evento, #99e887);
+      font-weight: bold;
+      letter-spacing: 0.02em;
+      padding-top: 2px;
+    }
+    .nick {
+      color: var(--azul-nick);
+      font-weight: bold;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+    .nick.self {
+      color: var(--dourado-nick);
+    }
+    .event-torneio {
+      color: var(--event-torneio);
+      font-weight: bold;
+    }
+    .event-desafio {
+      color: var(--event-desafio);
+      font-weight: bold;
+    }
+    .event-quiz {
+      color: var(--event-quiz);
+      font-weight: bold;
+    }
+    #terminal-bar {
+      display: flex;
+      align-items: center;
+      padding: 0 20px 13px 20px;
+      min-height: 44px;
+      background: var(--fundo-central);
+      border-bottom-left-radius: 7px;
+      border-bottom-right-radius: 7px;
+      border-top: 1px solid var(--bordas);
+      gap: 0;
+      overflow: visible;
+      position: relative;
+    }
+    #prompt-row {
+      display: flex;
+      align-items: center;
+      margin: 0;
+      padding: 0;
+      flex: 1;
+      width: 100%;
+      gap: 8px;
+    }
+    #terminal-nick {
+      color: var(--dourado-nick);
+      font-weight: bold;
+      font-size: 1.13em;
+      margin-right: 3px;
+      user-select: text;
+      flex-shrink: 0;
+      letter-spacing: 0.04em;
+      line-height: 1.5;
+      padding-bottom: 0;
+      padding-top: 0;
+      vertical-align: middle;
+      position: relative;
+      top: 0;
+      transform: translateY(-3px);
+    }
+    .claro #terminal-nick {
+      color: var(--dourado-nick);
+    }
+    #prompt-colon {
+      color: var(--verde2);
+      margin-right: 6px;
+      font-size: 1.13em;
+      font-weight: bold;
+      flex-shrink: 0;
+      user-select: none;
+      letter-spacing: 0.01em;
+      line-height: 1.5;
+      padding-bottom: 0;
+      padding-top: 0;
+      position: relative;
+      top: 0;
+      transform: translateY(-3px);
+    }
+    .claro #prompt-colon {
+      color: var(--verde2);
+    }
+    #msg {
+      flex: 1;
+      font-family: inherit;
+      font-size: 1em;
+      border: none;
+      background: var(--input-bg);
+      color: var(--input-fg);
+      outline: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      min-width: 0;
+      caret-color: var(--verde2);
+      animation: caret-blink 1s steps(1) infinite;
+      line-height: 1.6;
+    }
+    @keyframes caret-blink {
+      0%, 50% { caret-color: var(--verde2); }
+      51%, 100% { caret-color: transparent; }
+    }
+    #msg::placeholder {
+      color: transparent;
+    }
+    #footer {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      background: var(--footer-bg);
+      color: var(--footer-fg);
+      font-size: 1em;
+      padding: 7px 28px 9px 22px;
+      border-top: 1px solid var(--bordas);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      letter-spacing: 0.02em;
+      justify-content: flex-start;
+      user-select: text;
+    }
+    .cmd {
+      color: var(--footer-cmd);
+      margin-right: 10px;
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 500;
+      font-family: inherit;
+      letter-spacing: 0.02em;
+      transition: color 0.18s;
+    }
+    .cmd:hover {
+      color: var(--verde2);
+    }
+    #footer-theme-switch {
+      margin-left: auto;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .theme-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid var(--bordas);
+      cursor: pointer;
+      background: #181c1f;
+      transition: border 0.18s, box-shadow 0.18s, background 0.18s;
+      box-shadow: 0 2px 8px #0002;
+      margin-right: 0;
+    }
+    .theme-dot.light {
+      background: #fff;
+      border-color: #bbb;
+    }
+    .theme-dot.selected {
+      border: 2.7px solid var(--verde2);
+      box-shadow: 0 0 0 2px #a8ff6040;
+    }
+    @media (max-width: 900px) {
+      #sidebar-esq, #sidebar-dir {
+        display: none;
+      }
+      #chat-central {
+        max-width: 100vw;
+        margin: 7px 0 7px 0;
+      }
+      #footer {
+        font-size: 0.98em;
+        padding: 7px 8px 9px 10px;
+      }
+    }
   </style>
 </head>
 <body>
-  <div class="emoji">🦉</div>
-  <h1>Corujão está voando!</h1>
-  <p>Servidor rodando e HTML servido por Node.js + Express + PM2</p>
+  <div id="layout">
+    <div id="sidebar-esq">
+      <div class="titulo">Amigos</div>
+      <ul id="lista-amigos">
+        <li onclick="jogarProCentro('lucas')">lucas</li>
+        <li onclick="jogarProCentro('ana')">ana</li>
+        <li onclick="jogarProCentro('dudu')">dudu</li>
+        <li onclick="jogarProCentro('guest')">guest</li>
+        <li onclick="jogarProCentro('gamer123')">gamer123</li>
+      </ul>
+      <div class="titulo">Salas</div>
+      <ul id="lista-salas">
+        <li onclick="jogarProCentro('geral','sala')">geral</li>
+        <li onclick="jogarProCentro('kof','sala')">kof</li>
+        <li onclick="jogarProCentro('dev','sala')">dev</li>
+        <li onclick="jogarProCentro('musica','sala')">musica</li>
+        <li onclick="jogarProCentro('memes','sala')">memes</li>
+      </ul>
+    </div>
+    <div id="main">
+      <div id="chat-central">
+        <div id="terminal-header">
+          corujão server mode on. seja bem vindo!
+        </div>
+        <ul id="chat-list">
+          <li class="msg-evento">[21:04] <span class="event-torneio">Torneio 23h</span> – veja detalhes ou participe!</li>
+          <li class="msg-evento">[21:04] <span class="event-desafio">Desafio do Dia</span> – veja detalhes ou participe!</li>
+          <li class="msg-evento">[21:04] <span class="event-quiz">Quiz KOF</span> – veja detalhes ou participe!</li>
+        </ul>
+        <div id="terminal-bar">
+          <form id="prompt-row" autocomplete="off">
+            <span id="terminal-nick">ederkof</span>
+            <span id="prompt-colon">:</span>
+            <input type="text" id="msg" maxlength="120" required autocomplete="off" autofocus>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div id="sidebar-dir">
+      <div class="titulo">Desafios & Torneios</div>
+      <ul>
+        <li onclick="eventoPainel('Torneio 23h', 'event-torneio')">Torneio 23h</li>
+        <li onclick="eventoPainel('Desafio do Dia', 'event-desafio')">Desafio do Dia</li>
+        <li onclick="eventoPainel('Quiz KOF', 'event-quiz')">Quiz KOF</li>
+      </ul>
+    </div>
+  </div>
+  <div id="footer">
+    <span class="cmd">/ajuda</span>
+    <span class="cmd">/amigos</span>
+    <span class="cmd">/salas</span>
+    <span class="cmd">/rank</span>
+    <span class="cmd">/limpar</span>
+    <span class="cmd">/sair</span>
+    <span id="footer-theme-switch">
+      <div class="theme-dot dark selected" title="Tema escuro"></div>
+      <div class="theme-dot light" title="Tema claro"></div>
+    </span>
+  </div>
+  <script>
+    function nomeSpan(nome) {
+      if (nome.toLowerCase() === "ederkof") {
+        return `<span class="nick self">@${nome}</span>`;
+      } else {
+        return `<span class="nick">@${nome}</span>`;
+      }
+    }
+    function destacarMencoes(texto) {
+      return texto.replace(/@([a-zA-Z0-9_]+)/g, (match, nome) => {
+        if (nome.toLowerCase() === "ederkof") {
+          return `<span class="nick self">@${nome}</span>`;
+        } else {
+          return `<span class="nick">@${nome}</span>`;
+        }
+      });
+    }
+    function jogarProCentro(nome, tipo) {
+      const chat = document.getElementById('chat-list');
+      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
+      let li = document.createElement('li');
+      li.className = "msg-voce";
+      if (tipo === 'sala') {
+        li.innerHTML = `[${hora}] Você entrou na sala <span class="nick">#${nome}</span>`;
+      } else {
+        li.innerHTML = `[${hora}] Você iniciou conversa com ${nomeSpan(nome)}`;
+      }
+      chat.appendChild(li);
+      chat.scrollTop = chat.scrollHeight;
+      document.getElementById('msg').focus();
+    }
+    function eventoPainel(texto, classe) {
+      const chat = document.getElementById('chat-list');
+      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
+      let li = document.createElement('li');
+      li.className = "msg-evento";
+      li.innerHTML = `[${hora}] <span class="${classe}">${texto}</span> – veja detalhes ou participe!`;
+      chat.appendChild(li);
+      chat.scrollTop = chat.scrollHeight;
+      document.getElementById('msg').focus();
+    }
+    document.getElementById('prompt-row').onsubmit = e => {
+      e.preventDefault();
+      let msg = document.getElementById('msg').value.trim();
+      if(msg) {
+        msg = destacarMencoes(msg);
+        const chat = document.getElementById('chat-list');
+        const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
+        const nome = "ederkof";
+        const li = document.createElement('li');
+        li.className = "msg-voce";
+        li.innerHTML = `[${hora}] ${nomeSpan(nome)}: ${msg}`;
+        chat.appendChild(li);
+        chat.scrollTop = chat.scrollHeight;
+        document.getElementById('msg').value = "";
+      }
+    };
+    window.onload = () => {
+      document.getElementById('msg').focus();
+    };
+    const html = document.documentElement;
+    const themeDots = document.querySelectorAll('.theme-dot');
+    function atualizaTema(idx) {
+      if(idx === 0) {
+        html.classList.remove('claro');
+        themeDots[0].classList.add('selected');
+        themeDots[1].classList.remove('selected');
+      } else {
+        html.classList.add('claro');
+        themeDots[1].classList.add('selected');
+        themeDots[0].classList.remove('selected');
+      }
+    }
+    themeDots[0].onclick = () => atualizaTema(0);
+    themeDots[1].onclick = () => atualizaTema(1);
+  </script>
 </body>
 </html>
