@@ -1,17 +1,120 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-  <meta charset="UTF-8">
-  <title>Corujão Online</title>
+  <meta charset="UTF-8" />
+  <title>Corujão Chat - Autenticação</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
-    body { font-family: Arial, sans-serif; background: #181818; color: #fff; text-align: center; padding-top: 10vh; }
-    h1 { font-size: 3em; }
-    .emoji { font-size: 5em; }
+    body { font-family: Arial, sans-serif; background: #222; color: #eee; margin: 0; }
+    .container { max-width: 400px; margin: 60px auto; background: #333; padding: 32px; border-radius: 10px; box-shadow: 0 0 10px #000a; }
+    h1 { text-align: center; }
+    label { display: block; margin-top: 16px; }
+    input { width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: none; }
+    button { margin-top: 20px; width: 100%; padding: 12px; background: #6c3; color: #222; border: none; border-radius: 4px; font-size: 18px; font-weight: bold; cursor: pointer; }
+    button:hover { background: #4c2; }
+    .msg { margin: 16px 0; text-align: center; min-height: 24px; }
+    .hidden { display: none; }
+    .chatbox { border: 1px solid #444; padding: 16px; background: #282828; border-radius: 8px; margin-top: 32px; }
+    .logout-btn { background: #c33; color: #fff; margin-top: 12px; }
   </style>
 </head>
 <body>
-  <div class="emoji">🦉</div>
-  <h1>Corujão está voando!</h1>
-  <p>Servidor rodando e HTML servido por Node.js + Express + PM2</p>
+  <div class="container">
+    <h1>Corujão Chat</h1>
+    <div id="welcome" class="hidden">
+      <div class="msg" id="welcome-msg"></div>
+      <button class="logout-btn" onclick="logout()">Sair</button>
+      <div class="chatbox">
+        <b>Chat liberado!</b>
+        <p>(Aqui vai o chat real no futuro)</p>
+      </div>
+    </div>
+    <div id="auth-forms">
+      <div class="msg" id="msg"></div>
+      <form id="login-form">
+        <h2>Entrar</h2>
+        <label>Usuário</label>
+        <input type="text" name="username" required autocomplete="username">
+        <label>Senha</label>
+        <input type="password" name="password" required autocomplete="current-password">
+        <button type="submit">Login</button>
+      </form>
+      <hr/>
+      <form id="register-form">
+        <h2>Criar Conta</h2>
+        <label>Usuário</label>
+        <input type="text" name="username" required>
+        <label>Senha</label>
+        <input type="password" name="password" required>
+        <button type="submit">Registrar</button>
+      </form>
+    </div>
+  </div>
+  <script>
+    // Função para verificar sessão
+    async function checkSession() {
+      const res = await fetch('/api/teste');
+      if (res.ok) {
+        // Tenta pegar usuário da sessão
+        const userRes = await fetch('/api/me');
+        if (userRes.ok) {
+          const data = await userRes.json();
+          if (data.username) {
+            document.getElementById('auth-forms').classList.add('hidden');
+            document.getElementById('welcome').classList.remove('hidden');
+            document.getElementById('welcome-msg').textContent = `Bem-vindo, ${data.username}!`;
+            return;
+          }
+        }
+      }
+      document.getElementById('welcome').classList.add('hidden');
+      document.getElementById('auth-forms').classList.remove('hidden');
+    }
+
+    // Login
+    document.getElementById('login-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const body = {
+        username: form.username.value,
+        password: form.password.value
+      };
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      document.getElementById('msg').textContent = data.message || data.error || '';
+      if (res.ok) checkSession();
+    };
+
+    // Registro
+    document.getElementById('register-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const body = {
+        username: form.username.value,
+        password: form.password.value
+      };
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      document.getElementById('msg').textContent = data.message || data.error || '';
+      if (res.ok) checkSession();
+    };
+
+    // Logout
+    async function logout() {
+      await fetch('/api/logout', { method: 'POST' });
+      checkSession();
+    }
+
+    // Checa sessão ao carregar
+    checkSession();
+  </script>
 </body>
 </html>
