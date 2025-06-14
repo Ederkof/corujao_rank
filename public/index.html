@@ -1,239 +1,120 @@
-cat > backend_global/public/index.html <<'EOF'
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-  <meta charset="UTF-8">
-  <title>Corujão Terminal</title>
-  <link href="https://fonts.googleapis.com/css2?family=Electrolize&display=swap" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <title>Corujão Chat - Autenticação</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
-    :root {
-      --fundo: #181c1f;
-      --fundo-central: #23272e;
-      --bordas: #23282e;
-      --texto: #e0e0e0;
-      --verde: #a8ff60;
-      --verde2: #99e887;
-      --azul-nick: #67aaff;
-      --dourado-nick: #ffe066;
-      --header: #23282e;
-      --input-bg: transparent;
-      --input-fg: #fff;
-      --footer-bg: #1a1d1e;
-      --footer-fg: #99e887;
-      --footer-cmd: #99e887;
-      --event-torneio: #ffb347;
-      --event-desafio: #7ed957;
-      --event-quiz: #67aaff;
+    body { font-family: Arial, sans-serif; background: #222; color: #eee; margin: 0; }
+    .container { max-width: 400px; margin: 60px auto; background: #333; padding: 32px; border-radius: 10px; box-shadow: 0 0 10px #000a; }
+    h1 { text-align: center; }
+    label { display: block; margin-top: 16px; }
+    input { width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: none; }
+    button { margin-top: 20px; width: 100%; padding: 12px; background: #6c3; color: #222; border: none; border-radius: 4px; font-size: 18px; font-weight: bold; cursor: pointer; }
+    button:hover { background: #4c2; }
+    .msg { margin: 16px 0; text-align: center; min-height: 24px; }
+    .hidden { display: none; }
+    .chatbox { border: 1px solid #444; padding: 16px; background: #282828; border-radius: 8px; margin-top: 32px; }
+    .logout-btn { background: #c33; color: #fff; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Corujão Chat</h1>
+    <div id="welcome" class="hidden">
+      <div class="msg" id="welcome-msg"></div>
+      <button class="logout-btn" onclick="logout()">Sair</button>
+      <div class="chatbox">
+        <b>Chat liberado!</b>
+        <p>(Aqui vai o chat real no futuro)</p>
+      </div>
+    </div>
+    <div id="auth-forms">
+      <div class="msg" id="msg"></div>
+      <form id="login-form">
+        <h2>Entrar</h2>
+        <label>Usuário</label>
+        <input type="text" name="username" required autocomplete="username">
+        <label>Senha</label>
+        <input type="password" name="password" required autocomplete="current-password">
+        <button type="submit">Login</button>
+      </form>
+      <hr/>
+      <form id="register-form">
+        <h2>Criar Conta</h2>
+        <label>Usuário</label>
+        <input type="text" name="username" required>
+        <label>Senha</label>
+        <input type="password" name="password" required>
+        <button type="submit">Registrar</button>
+      </form>
+    </div>
+  </div>
+  <script>
+    // Função para verificar sessão
+    async function checkSession() {
+      const res = await fetch('/api/teste');
+      if (res.ok) {
+        // Tenta pegar usuário da sessão
+        const userRes = await fetch('/api/me');
+        if (userRes.ok) {
+          const data = await userRes.json();
+          if (data.username) {
+            document.getElementById('auth-forms').classList.add('hidden');
+            document.getElementById('welcome').classList.remove('hidden');
+            document.getElementById('welcome-msg').textContent = `Bem-vindo, ${data.username}!`;
+            return;
+          }
+        }
+      }
+      document.getElementById('welcome').classList.add('hidden');
+      document.getElementById('auth-forms').classList.remove('hidden');
     }
-    .claro {
-      --fundo: #f5f6fa;
-      --fundo-central: #fff;
-      --bordas: #dbe2ea;
-      --texto: #222;
-      --verde: #25432e;
-      --verde2: #1a3c20;
-      --azul-nick: #1a3c60;
-      --dourado-nick: #b39c23;
-      --header: #e0ffe0;
-      --input-bg: #e0eae0;
-      --input-fg: #222;
-      --footer-bg: #e0ffe0;
-      --footer-fg: #1a3c20;
-      --footer-cmd: #1a3c20;
-      --event-torneio: #db8714;
-      --event-desafio: #2e7d32;
-      --event-quiz: #25432e;
+
+    // Login
+    document.getElementById('login-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const body = {
+        username: form.username.value,
+        password: form.password.value
+      };
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      document.getElementById('msg').textContent = data.message || data.error || '';
+      if (res.ok) checkSession();
+    };
+
+    // Registro
+    document.getElementById('register-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const body = {
+        username: form.username.value,
+        password: form.password.value
+      };
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      document.getElementById('msg').textContent = data.message || data.error || '';
+      if (res.ok) checkSession();
+    };
+
+    // Logout
+    async function logout() {
+      await fetch('/api/logout', { method: 'POST' });
+      checkSession();
     }
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      background: var(--fundo);
-      color: var(--texto);
-      font-family: 'Electrolize', monospace;
-      font-size: 1.12em;
-      width: 100vw;
-      height: 100vh;
-      box-sizing: border-box;
-    }
-    #layout {
-      display: flex;
-      height: 100vh;
-      width: 100vw;
-      overflow: hidden;
-    }
-    #sidebar-esq, #sidebar-dir {
-      width: 170px;
-      background: var(--fundo);
-      border-right: 2px solid var(--bordas);
-      border-left: 2px solid var(--bordas);
-      box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      font-size: 1em;
-      padding: 18px 10px 18px 14px;
-      min-width: 120px;
-      max-width: 210px;
-    }
-    #sidebar-esq { border-left: none; }
-    #sidebar-dir { border-right: none; }
-    #sidebar-esq .titulo, #sidebar-dir .titulo {
-      color: var(--verde2);
-      font-weight: bold;
-      font-size: 1.05em;
-      margin-bottom: 3px;
-      letter-spacing: 0.02em;
-    }
-    #sidebar-esq ul, #sidebar-dir ul {
-      list-style: none;
-      padding: 0;
-      margin: 0 0 10px 0;
-    }
-    #sidebar-esq li, #sidebar-dir li {
-      padding: 6px 0 6px 8px;
-      cursor: pointer;
-      color: var(--texto);
-      border-bottom: 1px solid var(--bordas);
-      border-radius: 2px;
-      transition: background 0.18s, color 0.16s;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    #sidebar-esq li:hover, #sidebar-dir li:hover {
-      background: var(--header);
-      color: var(--verde2);
-    }
-    #main {
-      flex: 1 1 auto;
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      background: var(--fundo);
-      height: 100vh;
-      justify-content: stretch;
-      align-items: stretch;
-      overflow: hidden;
-    }
-    #chat-central {
-      flex: 1 1 auto;
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      width: 100%;
-      background: var(--fundo-central);
-      border: 2px solid var(--bordas);
-      border-radius: 9px;
-      box-shadow: 0 4px 24px #0003;
-      margin: 18px 0 18px 0;
-      min-width: 0;
-      min-height: 0;
-    }
-    #terminal-header {
-      background: var(--header);
-      color: var(--verde2);
-      padding: 7px 16px 5px 18px;
-      font-weight: bold;
-      border-bottom: 1px solid var(--bordas);
-      font-size: 1.01em;
-      letter-spacing: 0.01em;
-      text-align: left;
-      border-top-left-radius: 7px;
-      border-top-right-radius: 7px;
-      transition: background 0.2s;
-    }
-    #chat-list {
-      flex: 1 1 auto;
-      overflow-y: auto;
-      padding: 8px 20px 8px 20px;
-      margin: 0;
-      list-style: none;
-      font-size: 1em;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      background: transparent;
-      border-radius: 0;
-      min-height: 25px;
-      max-height: none;
-    }
-    .msg-voce {
-      color: var(--texto);
-      font-weight: 500;
-    }
-    .msg-sistema, .msg-evento {
-      color: var(--msg-evento, #99e887);
-      font-weight: bold;
-      letter-spacing: 0.02em;
-      padding-top: 2px;
-    }
-    .nick {
-      color: var(--azul-nick);
-      font-weight: bold;
-      letter-spacing: 0.03em;
-      cursor: pointer;
-      transition: color 0.15s;
-    }
-    .nick.self {
-      color: var(--dourado-nick);
-    }
-    .event-torneio {
-      color: var(--event-torneio);
-      font-weight: bold;
-    }
-    .event-desafio {
-      color: var(--event-desafio);
-      font-weight: bold;
-    }
-    .event-quiz {
-      color: var(--event-quiz);
-      font-weight: bold;
-    }
-    /* TERMINAL BAR - Rodapé do chat central */
-    #terminal-bar {
-      display: flex;
-      align-items: center;
-      padding: 0 20px 13px 20px;
-      min-height: 44px;
-      background: var(--fundo-central);
-      border-bottom-left-radius: 7px;
-      border-bottom-right-radius: 7px;
-      border-top: 1px solid var(--bordas);
-      gap: 0;
-      overflow: visible;
-      position: relative;
-    }
-    #prompt-row {
-      display: flex;
-      align-items: center;
-      margin: 0;
-      padding: 0;
-      flex: 1;
-      width: 100%;
-      gap: 8px;
-    }
-    #terminal-nick {
-      color: var(--dourado-nick);
-      font-weight: bold;
-      font-size: 1.13em;
-      margin-right: 3px;
-      user-select: text;
-      flex-shrink: 0;
-      letter-spacing: 0.04em;
-      line-height: 1.5;
-      padding-bottom: 0;
-      padding-top: 0;
-      vertical-align: middle;
-      position: relative;
-      top: 0;
-      transform: translateY(-3px);
-    }
-    .claro #terminal-nick {
-      color: var(--dourado-nick);
-    }
-    #prompt-colon {
-      color: var(--verde2);
-      margin-right: 6px;
-      font*
-EOF
+
+    // Checa sessão ao carregar
+    checkSession();
+  </script>
+</body>
+</html>
