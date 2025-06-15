@@ -1,0 +1,5 @@
+--- 1. Log do Servidor (nohup.out) ---
+Corujao Server rodando na porta 8080
+Corujao Server rodando na porta 8080
+
+--- 2. Processos Node.js Ativos ---

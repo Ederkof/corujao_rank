@@ -199,7 +199,7 @@ function enviarMsg() {
 }
 
 // --- Lógica de Tema Claro/Escuro (do seu JS original) ---
-window.addEventListener('load', () => { // Usar 'load' para garantir que tudo esteja pronto
+window.addEventListener('load', () => { // Garante que todos os recursos (imagens, etc) carregaram
     const htmlElement = document.documentElement;
     const themeDots = document.querySelectorAll('.theme-dot');
 
@@ -220,21 +220,48 @@ window.addEventListener('load', () => { // Usar 'load' para garantir que tudo es
     themeDots[0].onclick = () => atualizaTema(0); 
     themeDots[1].onclick = () => atualizaTema(1);
 
-    el('msg').focus(); // Foca no input de mensagem após o carregamento completo
-
-    // --- Lógica para os botões do rodapé (/comandos) ---
-    const cmdButtons = document.querySelectorAll('.cmd');
-    cmdButtons.forEach(button => {
-        button.onclick = () => {
-            const commandText = button.textContent.trim();
-            el('input').value = commandText; // Coloca o comando no input
-            // Simula o evento Enter para acionar o envioMsg
-            const event = new KeyboardEvent('keypress', { key: 'Enter', bubbles: true, cancelable: true });
-            el('input').dispatchEvent(event);
-        };
-    });
-
     // Pede o nick apos o DOM estar pronto e a pagina carregada
     // Atrasado um pouco para garantir que o prompt apareca apos o layout
     setTimeout(pedirNick, 500); 
 });
+
+// --- Adicionar listener para DOMContentLoaded para garantir elementos do rodapé ---
+document.addEventListener('DOMContentLoaded', () => {
+    // Lógica para os botões do rodapé (/comandos) - ATIVADO SOMENTE QUANDO O DOM ESTÁ PRONTO
+    const cmdButtons = document.querySelectorAll('.cmd');
+    cmdButtons.forEach(button => {
+        button.onclick = () => {
+            const commandText = button.textContent.trim();
+            const inputElement = el('input'); // Acessa o input
+            if (inputElement) { // Verifica se o input existe antes de usar
+                inputElement.value = commandText;
+                const event = new KeyboardEvent('keypress', { key: 'Enter', bubbles: true, cancelable: true });
+                inputElement.dispatchEvent(event);
+            }
+        };
+    });
+    // Foca no input de mensagem, mas APOS o login ser iniciado
+    if (el('msg')) {
+        el('msg').focus(); 
+    }
+});
+
+// --- Funções Adicionais ---
+function jogarProCentro(item, tipo) {
+    // Implementação da função para centralizar o item clicado
+    if (tipo === 'amigo') {
+        el('input').value = `/msg ${item} `;
+        el('input').focus();
+    } else if (tipo === 'sala') {
+        el('input').value = `/entrar ${item}`;
+        el('input').focus();
+    }
+}
+
+function eventoPainel(evento, tipo) {
+    // Implementação da função para exibir detalhes do evento
+    if (tipo === 'event-desafio') {
+        el('input').value = `/desafio ${evento}`;
+        el('input').focus();
+    }
+}
