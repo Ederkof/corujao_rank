@@ -1,382 +1,371 @@
-// main.js - Corujão Terminal V2.0 (Versão Estável)
-
-// --- Estado Global ---
-const state = {
-    socket: io(),
-    admin: false,
-    nick: '',
-    loggedIn: false
-};
-
-// --- Inicialização Segura ---
+// main.js - Corujão Terminal (Versão Integrada)
 document.addEventListener('DOMContentLoaded', () => {
-    // Configuração do Tema
-    setupTheme();
+    // --- Configuração Inicial ---
+    const socket = io('https://seu-app.onrender.com', {
+        withCredentials: true,
+        autoConnect: false
+    });
 
-    // Configuração dos Eventos
-    setupEventListeners();
-
-    // Inicia o processo de login
-    initLogin();
-});
-
-// --- Configuração do Tema ---
-function setupTheme() {
-    const htmlElement = document.documentElement;
-    const themeDots = document.querySelectorAll('.theme-dot');
-
-    const updateTheme = (idx) => {
-        if (idx === 0) {
-            htmlElement.classList.remove('claro');
-            themeDots[0]?.classList.add('selected');
-            themeDots[1]?.classList.remove('selected');
-        } else {
-            htmlElement.classList.add('claro');
-            themeDots[1]?.classList.add('selected');
-            themeDots[0]?.classList.remove('selected');
-        }
+    // --- Estado Global ---
+    const state = {
+        user: null,
+        currentRoom: 'geral',
+        isAdmin: false,
+        onlineUsers: []
     };
 
-    updateTheme(0); // Tema escuro por padrão
-    themeDots[0]?.addEventListener('click', () => updateTheme(0));
-    themeDots[1]?.addEventListener('click', () => updateTheme(1));
-}
+    // --- Elementos da UI ---
+    const UI = {
+        chatList: document.getElementById('chat-list'),
+        msgInput: document.getElementById('msg'),
+        nickDisplay: document.getElementById('terminal-nick'),
+        sidebarUsers: document.getElementById('lista-amigos'),
+        sidebarRooms: document.getElementById('lista-salas'),
+        adminPanel: document.createElement('div') // Criaremos dinamicamente
+    };
 
-// --- Configuração dos Eventos ---
-function setupEventListeners() {
-    // Botão enviar e input
-    const enviarBtn = el('enviar');
-    const inputElement = el('input');
-
-    if (enviarBtn && inputElement) {
-        enviarBtn.addEventListener('click', enviarMsg);
-        inputElement.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') enviarMsg();
-        });
+    // --- Inicialização ---
+    function init() {
+        setupEventListeners();
+        showLoginModal();
+        setupAdminPanel();
     }
 
-    // Botões de comando rápido
-    document.querySelectorAll('.cmd').forEach(button => {
-        button.addEventListener('click', () => {
-            const input = el('input');
-            if (input) {
-                input.value = button.textContent.trim();
-                input.focus();
-            }
-        });
-    });
-}
-
-// --- Sistema de Login ---
-function initLogin() {
-    // Verifica se já tem um nick armazenado
-    const savedNick = localStorage.getItem('corujao_nick');
-    
-    if (savedNick && savedNick.length >= 3) {
-        tryLogin(savedNick);
-    } else {
-        showNickModal();
-    }
-}
-
-function showNickModal() {
-    const modal = `
-        <div class="modal-overlay active">
-            <div class="modal">
-                <h3>Bem-vindo ao Corujão Terminal</h3>
-                <input type="text" id="nick-input" placeholder="Digite seu nick" autofocus>
-                <button id="confirm-nick">Entrar</button>
-                <p class="error-msg" id="nick-error"></p>
+    // --- Sistema de Login ---
+    function showLoginModal() {
+        const modalHTML = `
+            <div class="modal-overlay active">
+                <div class="modal-content">
+                    <h3>🦉 Acessar Corujão Terminal</h3>
+                    <div class="form-group">
+                        <input type="text" id="login-username" placeholder="Seu nick" autofocus>
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="login-password" placeholder="Sua senha">
+                    </div>
+                    <button id="login-btn">Entrar</button>
+                    <button id="register-btn">Criar Conta</button>
+                    <p class="error-message" id="login-error"></p>
+                </div>
             </div>
-        </div>
-    `;
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        
+        document.getElementById('login-btn').addEventListener('click', handleLogin);
+        document.getElementById('register-btn').addEventListener('click', handleRegister);
+        
+        // Enter key support
+        document.getElementById('login-password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleLogin();
+        });
+    }
 
-    document.body.insertAdjacentHTML('beforeend', modal);
-
-    const nickInput = document.getElementById('nick-input');
-    const confirmBtn = document.getElementById('confirm-nick');
-    const errorMsg = document.getElementById('nick-error');
-
-    confirmBtn.addEventListener('click', () => {
-        const nick = nickInput.value.trim();
-        if (validateNick(nick)) {
-            tryLogin(nick);
-        }
-    });
-
-    nickInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            const nick = nickInput.value.trim();
-            if (validateNick(nick)) {
-                tryLogin(nick);
+    async function handleLogin() {
+        const username = document.getElementById('login-username').value.trim();
+        const password = document.getElementById('login-password').value;
+        
+        try {
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                state.user = data.user;
+                state.isAdmin = data.user.role === 'admin';
+                setupSocketConnection();
+                closeModal();
+                updateUIAfterLogin();
+            } else {
+                showError(data.error || 'Credenciais inválidas');
             }
+        } catch (err) {
+            showError('Erro ao conectar ao servidor');
         }
-    });
-}
-
-function validateNick(nick) {
-    const errorMsg = document.getElementById('nick-error');
-    if (!errorMsg) return false;
-
-    if (!nick || nick.length < 3) {
-        errorMsg.textContent = "Nick deve ter pelo menos 3 caracteres";
-        return false;
-    }
-    
-    if (!/^[a-zA-Z0-9_]+$/.test(nick)) {
-        errorMsg.textContent = "Use apenas letras, números e underline";
-        return false;
     }
 
-    errorMsg.textContent = "";
-    return true;
-}
-
-function tryLogin(nick) {
-    state.socket.emit('login', nick, (resp) => {
-        if (resp.ok) {
-            // Login bem-sucedido
-            state.nick = nick;
-            state.admin = resp.admin;
-            state.loggedIn = true;
-            
-            // Armazena o nick no localStorage
-            localStorage.setItem('corujao_nick', nick);
-            
-            // Atualiza a UI
-            updateUIAfterLogin();
-            
-            // Remove o modal
-            const modal = document.querySelector('.modal-overlay');
-            if (modal) modal.remove();
-            
-            // Carrega dados iniciais
-            loadInitialData();
-        } else {
-            // Mostra erro no modal
-            const errorMsg = document.getElementById('nick-error');
-            if (errorMsg) errorMsg.textContent = resp.msg;
-            
-            // Foca no input novamente
-            const nickInput = document.getElementById('nick-input');
-            if (nickInput) nickInput.focus();
+    async function handleRegister() {
+        const username = document.getElementById('login-username').value.trim();
+        const password = document.getElementById('login-password').value;
+        
+        if (username.length < 3) {
+            return showError('Nick precisa ter pelo menos 3 caracteres');
         }
-    });
-}
-
-function updateUIAfterLogin() {
-    const nickElement = el('terminal-nick');
-    if (nickElement) nickElement.textContent = state.nick;
-    
-    const chatList = el('chat-list');
-    if (chatList) chatList.innerHTML = '';
-    
-    addMsg('Sistema', `Bem-vindo, ${state.nick}! Digite /ajuda para ver os comandos.`, false, true);
-    
-    const input = el('input');
-    if (input) {
-        input.focus();
-        input.disabled = false;
-        input.placeholder = "Digite sua mensagem...";
+        
+        try {
+            const response = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showError('Conta criada! Faça login agora', 'success');
+            } else {
+                showError(data.error || 'Erro ao criar conta');
+            }
+        } catch (err) {
+            showError('Erro ao conectar ao servidor');
+        }
     }
-}
 
-function loadInitialData() {
-    state.socket.emit('sidebar');
-    state.socket.emit('mural');
-}
+    function closeModal() {
+        const modal = document.querySelector('.modal-overlay');
+        if (modal) modal.remove();
+    }
 
-// --- Funções do Chat ---
-function enviarMsg() {
-    const inputElement = el('input');
-    if (!inputElement || !state.loggedIn) return;
-    
-    const val = inputElement.value.trim();
-    if (!val) return;
+    function showError(message, type = 'error') {
+        const errorEl = document.getElementById('login-error');
+        errorEl.textContent = message;
+        errorEl.className = `error-message ${type}`;
+    }
 
-    if (val.startsWith('/')) {
-        state.socket.emit('comando', val, (resp) => {
-            if (resp?.text) addMsg('Sistema', resp.text, null, true);
+    // --- Configuração do Socket.IO ---
+    function setupSocketConnection() {
+        socket.connect();
+        
+        socket.on('connect', () => {
+            socket.emit('login', state.user.username, (response) => {
+                if (response.ok) {
+                    state.isAdmin = response.admin;
+                    updateUIAfterLogin();
+                    loadInitialData();
+                }
+            });
         });
-    } else {
-        state.socket.emit('msg', val, (resp) => {
-            if (resp?.text) addMsg('Sistema', resp.text, null, true);
+        
+        socket.on('msg', (data) => {
+            addMessage(data.from, data.text, data.admin);
+        });
+        
+        socket.on('system', (message) => {
+            addSystemMessage(message);
+        });
+        
+        socket.on('users:update', (users) => {
+            state.onlineUsers = users;
+            updateOnlineUsers();
+        });
+        
+        socket.on('disconnect', () => {
+            addSystemMessage('Conexão perdida. Tentando reconectar...');
         });
     }
-    inputElement.value = '';
-    inputElement.focus();
-}
 
-function addMsg(from, text, destaque = false, sistema = false) {
-    const chatList = el('chat-list');
-    if (!chatList) return;
-
-    const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-    let classe = sistema ? 'msg-sistema' : 'msg-corujao';
-    
-    if (from.toLowerCase() === state.nick.toLowerCase()) {
-        classe = 'msg-voce';
+    // --- Funções do Chat ---
+    function addMessage(from, text, isAdmin = false) {
+        const messageElement = document.createElement('li');
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        messageElement.className = from === state.user.username ? 'msg-voce' : 'msg-corujao';
+        if (isAdmin) messageElement.classList.add('admin-msg');
+        
+        messageElement.innerHTML = `
+            <span class="hora">[${time}]</span>
+            ${formatNickname(from)}: 
+            ${formatMessage(text)}
+        `;
+        
+        UI.chatList.appendChild(messageElement);
+        scrollChatToBottom();
     }
-    if (destaque) classe += ' destaque';
 
-    const processedText = destacarMencoes(mostrarEmotions(text));
-    const li = document.createElement('li');
-    li.className = classe;
-    li.innerHTML = `<span class="hora">[${hora}]</span> ${nomeSpan(from)}: ${processedText}`;
-    chatList.appendChild(li);
-    chatList.scrollTop = chatList.scrollHeight;
-}
-
-// --- Funções Auxiliares ---
-function el(id) { 
-    return document.getElementById(id); 
-}
-
-function nomeSpan(nome) {
-    if (nome.toLowerCase() === state.nick.toLowerCase()) {
-        return `<span class="nick self">@${nome}</span>`;
-    } else {
-        return `<span class="nick">@${nome}</span>`;
+    function addSystemMessage(text) {
+        const messageElement = document.createElement('li');
+        messageElement.className = 'msg-sistema';
+        messageElement.textContent = text;
+        UI.chatList.appendChild(messageElement);
+        scrollChatToBottom();
     }
-}
 
-function destacarMencoes(texto) {
-    return texto.replace(/@([a-zA-Z0-9_]+)/g, (match, nome) => {
-        if (nome.toLowerCase() === state.nick.toLowerCase()) {
-            return `<span class="nick self">@${nome}</span>`;
-        } else {
-            return `<span class="nick">@${nome}</span>`;
-        }
-    });
-}
+    function formatNickname(nick) {
+        const isSelf = nick === state.user.username;
+        const isAdmin = state.onlineUsers.find(u => u.nick === nick)?.admin;
+        
+        return `
+            <span class="nick ${isSelf ? 'self' : ''} ${isAdmin ? 'admin' : ''}">
+                @${nick}
+            </span>
+        `;
+    }
 
-function mostrarEmotions(texto) {
-    return texto
-        .replace(/:coruja:/g, '🦉')
-        .replace(/:fogo:/g, '🔥')
-        .replace(/:zzz:/g, '😴')
-        .replace(/:top:/g, '😎')
-        .replace(/:alegria:/g, '😂')
-        .replace(/:viva:/g, '🙌')
-        .replace(/:pc:/g, '💻')
-        .replace(/:sorriso:/g, '😁');
-}
+    function formatMessage(text) {
+        // Processa emotions e menções
+        return text
+            .replace(/:coruja:/g, '🦉')
+            .replace(/:fogo:/g, '🔥')
+            .replace(/@(\w+)/g, (match, nick) => {
+                return formatNickname(nick);
+            });
+    }
 
-// --- Eventos Socket.IO ---
-state.socket.on('connect', () => {
-    if (state.loggedIn) {
-        // Reconecta automaticamente se já estava logado
-        state.socket.emit('relogin', state.nick, (resp) => {
-            if (resp.ok) {
-                state.admin = resp.admin;
-                addMsg('Sistema', 'Reconectado ao servidor', false, true);
+    function scrollChatToBottom() {
+        UI.chatList.scrollTop = UI.chatList.scrollHeight;
+    }
+
+    // --- Controles do Chat ---
+    function setupEventListeners() {
+        // Envio de mensagem
+        document.getElementById('prompt-row').addEventListener('submit', (e) => {
+            e.preventDefault();
+            sendMessage();
+        });
+        
+        // Comandos rápidos
+        document.querySelectorAll('.cmd').forEach(cmd => {
+            cmd.addEventListener('click', () => {
+                UI.msgInput.value = cmd.textContent.replace('/', '');
+                UI.msgInput.focus();
+            });
+        });
+        
+        // Teclas de atalho
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'l') {
+                e.preventDefault();
+                clearChat();
             }
         });
     }
-});
 
-state.socket.on('disconnect', () => {
-    addMsg('Sistema', 'Conexão perdida. Tentando reconectar...', true, true);
-});
+    function sendMessage() {
+        const text = UI.msgInput.value.trim();
+        if (!text || !state.user) return;
+        
+        if (text.startsWith('/')) {
+            handleCommand(text);
+        } else {
+            socket.emit('msg', text, state.currentRoom, (response) => {
+                if (response.error) {
+                    addSystemMessage(response.error);
+                }
+            });
+        }
+        
+        UI.msgInput.value = '';
+    }
 
-state.socket.on('msg', (data) => {
-    addMsg(data.from, data.text, data.destaque, data.sistema);
-});
+    function handleCommand(cmd) {
+        const args = cmd.slice(1).split(' ');
+        const command = args[0].toLowerCase();
+        
+        switch (command) {
+            case 'sala':
+                changeRoom(args[1] || 'geral');
+                break;
+            case 'limpar':
+                clearChat();
+                break;
+            case 'admin':
+                if (state.isAdmin) showAdminPanel();
+                break;
+            // ... outros comandos
+            default:
+                addSystemMessage(`Comando desconhecido: ${command}`);
+        }
+    }
 
-state.socket.on('limpar', () => { 
-    const cl = el('chat-list'); 
-    if (cl) cl.innerHTML = ''; 
-});
+    function changeRoom(room) {
+        socket.emit('join', room);
+        state.currentRoom = room;
+        addSystemMessage(`Entrou na sala: ${room}`);
+    }
 
-state.socket.on('salas', (salas) => {
-    addMsg('Sistema', 'Salas ativas: ' + salas.map(s => `#${s.nome} (${s.usuarios})`).join(', '), false, true);
-});
+    function clearChat() {
+        UI.chatList.innerHTML = '';
+    }
 
-state.socket.on('desafios', (desafios) => {
-    addMsg('Sistema', 'Desafios: ' + desafios.map(d => `${d.nome} (${d.aberto ? 'Aberto' : 'Fechado'})`).join(', '), false, true);
-});
-
-state.socket.on('ranking', (lista) => {
-    addMsg('Sistema', 'TOP CORUJÕES:\n' + lista.map((e, i) => `${i+1}. @${e.nick} - ${e.pontos}`).join('\n'), false, true);
-});
-
-state.socket.on('mural', renderMural);
-state.socket.on('sidebar', renderSidebar);
-
-// --- Funções de Renderização ---
-function renderMural(muralData) { 
-    const chatList = el('chat-list');
-    if (!chatList) return;
-
-    const oldMuralItems = chatList.querySelectorAll('.mural-item');
-    oldMuralItems.forEach(item => item.remove());
-
-    muralData.forEach(e => {
-        const li = document.createElement('li');
-        li.className = `msg-evento mural-item ${e.tipo === 'fixo' ? 'fixo' : ''}`;
-        li.innerHTML = mostrarEmotions(e.text);
-        chatList.insertBefore(li, chatList.firstChild); 
-    });
-    chatList.scrollTop = chatList.scrollHeight;
-}
-
-function renderSidebar({ ultSalas, ultUsers, abertos }) {
-    const listaAmigos = el('lista-amigos');
-    const listaSalas = el('lista-salas');
-    const sidebarDirUl = el('sidebar-dir')?.querySelector('ul');
-
-    if (listaAmigos) listaAmigos.innerHTML = '';
-    if (listaSalas) listaSalas.innerHTML = '';
-    if (sidebarDirUl) sidebarDirUl.innerHTML = '';
-
-    if (listaAmigos && ultUsers) {
-        ultUsers.forEach(u => {
-            const li = document.createElement('li');
-            li.onclick = () => jogarProCentro(u, 'amigo');
-            li.textContent = u;
-            listaAmigos.appendChild(li);
+    // --- Sistema de Admin ---
+    function setupAdminPanel() {
+        UI.adminPanel.id = 'admin-panel';
+        UI.adminPanel.className = 'admin-panel';
+        UI.adminPanel.innerHTML = `
+            <h4>🛡️ Painel Admin</h4>
+            <div class="admin-actions">
+                <button class="admin-btn" data-action="ban">Banir Usuário</button>
+                <button class="admin-btn" data-action="mute">Silenciar</button>
+                <button class="admin-btn" data-action="broadcast">Anúncio</button>
+            </div>
+        `;
+        
+        document.body.appendChild(UI.adminPanel);
+        
+        // Event listeners para botões admin
+        UI.adminPanel.querySelectorAll('.admin-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.action;
+                handleAdminAction(action);
+            });
         });
     }
 
-    if (listaSalas && ultSalas) {
-        ultSalas.forEach(s => {
-            const li = document.createElement('li');
-            li.onclick = () => jogarProCentro(s, 'sala');
-            li.textContent = `#${s}`;
-            listaSalas.appendChild(li);
+    function handleAdminAction(action) {
+        const nick = prompt(`Digite o nick para ${action}:`);
+        if (!nick) return;
+        
+        switch (action) {
+            case 'ban':
+                const reason = prompt('Motivo do banimento:');
+                socket.emit('admin:ban', nick, reason);
+                break;
+            // ... outras ações
+        }
+    }
+
+    function showAdminPanel() {
+        UI.adminPanel.style.display = state.isAdmin ? 'block' : 'none';
+    }
+
+    // --- Atualização da UI ---
+    function updateUIAfterLogin() {
+        // Atualiza nick exibido
+        UI.nickDisplay.textContent = state.user.username;
+        
+        // Mostra controles admin
+        if (state.isAdmin) {
+            document.body.classList.add('admin-mode');
+            showAdminPanel();
+        }
+        
+        // Foca no input
+        UI.msgInput.focus();
+    }
+
+    function updateOnlineUsers() {
+        UI.sidebarUsers.innerHTML = '';
+        state.onlineUsers.forEach(user => {
+            const userEl = document.createElement('li');
+            userEl.textContent = `@${user.nick} ${user.admin ? '🛡️' : ''}`;
+            userEl.onclick = () => startPrivateChat(user.nick);
+            UI.sidebarUsers.appendChild(userEl);
         });
     }
 
-    if (sidebarDirUl && abertos) {
-        sidebarDirUl.innerHTML += `<li class="titulo">Desafios & Torneios</li>`;
-        abertos.forEach(d => {
-            const li = document.createElement('li');
-            li.onclick = () => eventoPainel(d, 'event-desafio');
-            li.textContent = d;
-            sidebarDirUl.appendChild(li);
-        });
+    function startPrivateChat(nick) {
+        UI.msgInput.value = `/privado ${nick} `;
+        UI.msgInput.focus();
     }
-}
 
-// --- Funções de Navegação ---
-function jogarProCentro(item, tipo) {
-    const inputElement = el('input');
-    if (!inputElement) return;
-    
-    if (tipo === 'amigo') {
-        inputElement.value = `/msg ${item} `;
-    } else if (tipo === 'sala') {
-        inputElement.value = `/entrar ${item}`;
+    function loadInitialData() {
+        // Carrega mensagens iniciais
+        fetch(`/messages?room=${state.currentRoom}`)
+            .then(res => res.json())
+            .then(messages => {
+                messages.forEach(msg => {
+                    addMessage(msg.user, msg.text);
+                });
+            });
+        
+        // Carrega usuários online
+        socket.emit('get:users');
     }
-    inputElement.focus();
-}
 
-function eventoPainel(evento, tipo) {
-    const inputElement = el('input');
-    if (!inputElement) return;
-    
-    if (tipo === 'event-desafio') {
-        inputElement.value = `/desafio ${evento}`;
-        inputElement.focus();
-    }
-}
+    // Inicia a aplicação
+    init();
+});

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Corujão Terminal</title>
+  <link href="https://fonts.googleapis.com/css2?family=Electrolize&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="layout">
+    <!-- Sidebar Esquerda - Amigos e Salas -->
+    <div id="sidebar-esq">
+      <div class="sidebar-titulo">Amigos Online</div>
+      <ul id="lista-amigos">
+        <!-- Dinâmico via JS -->
+        <li class="skeleton">carregando...</li>
+        <li class="skeleton">carregando...</li>
+      </ul>
+      
+      <div class="sidebar-titulo">Salas Ativas</div>
+      <ul id="lista-salas">
+        <!-- Dinâmico via JS -->
+        <li class="skeleton">carregando...</li>
+        <li class="skeleton">carregando...</li>
+      </ul>
+    </div>
+
+    <!-- Área Central - Chat -->
+    <div id="main">
+      <div id="chat-central">
+        <div id="terminal-header">
+          🦉 Corujão Terminal v3.0 | Seja bem-vindo!
+        </div>
+        
+        <ul id="chat-list">
+          <!-- Mensagens iniciais -->
+          <li class="msg-sistema">Conectando ao servidor...</li>
+          <li class="msg-evento">[Sistema] Digite /ajuda para ver os comandos</li>
+        </ul>
+        
+        <div id="terminal-bar">
+          <form id="prompt-row" autocomplete="off">
+            <span id="terminal-nick">visitante</span>
+            <span id="prompt-colon">:</span>
+            <input type="text" id="msg" placeholder="Digite sua mensagem..." maxlength="300" disabled>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar Direita - Eventos -->
+    <div id="sidebar-dir">
+      <div class="sidebar-titulo">Eventos Ativos</div>
+      <ul>
+        <li onclick="comandoRapido('/evento torneio')">Torneio Noturno</li>
+        <li onclick="comandoRapido('/evento desafio')">Desafio Diário</li>
+        <li onclick="comandoRapido('/quiz iniciar')">Quiz KOF</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Rodapé Fixo -->
+  <div id="footer">
+    <span class="cmd" onclick="comandoRapido('/ajuda')">/ajuda</span>
+    <span class="cmd" onclick="comandoRapido('/amigos')">/amigos</span>
+    <span class="cmd" onclick="comandoRapido('/salas')">/salas</span>
+    <span class="cmd" onclick="comandoRapido('/ranking')">/ranking</span>
+    <span class="cmd" onclick="comandoRapido('/limpar')">/limpar</span>
+    <span class="cmd" onclick="comandoRapido('/admin')" id="admin-cmd" style="display:none">/admin</span>
+    
+    <div id="footer-theme-switch">
+      <div class="theme-dot dark selected" title="Tema escuro" onclick="mudarTema('escuro')"></div>
+      <div class="theme-dot light" title="Tema claro" onclick="mudarTema('claro')"></div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="main.js"></script>
+  
+  <!-- Funções Inline (apenas para exemplo) -->
+  <script>
+    // Funções temporárias até o JS carregar
+    function comandoRapido(cmd) {
+      const input = document.getElementById('msg');
+      if (input) {
+        input.value = cmd;
+        input.focus();
+      }
+    }
+    
+    function mudarTema(tema) {
+      document.documentElement.classList.toggle('claro', tema === 'claro');
+      document.querySelectorAll('.theme-dot').forEach(dot => {
+        dot.classList.toggle('selected', 
+          (tema === 'escuro' && dot.classList.contains('dark')) || 
+          (tema === 'claro' && dot.classList.contains('light'))
+      });
+    }
+  </script>
+</body>
+</html>
