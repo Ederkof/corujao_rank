@@ -2,22 +2,56 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Corujão Server</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Corujão Terminal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Electrolize&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css"> 
 </head>
 <body>
-<div id="container">
-    <div id="sidebar" class="coluna"></div>
-    <div id="chatcentral">
-        <div id="messages"></div>
-        <div id="prompt">
-            <input id="input" placeholder="Digite sua mensagem ou comando...">
-            <button id="enviar">OK</button>
+    <div id="layout">
+        <div id="sidebar-esq">
+            <div class="titulo">Amigos</div>
+            <ul id="lista-amigos">
+                </ul>
+            <div class="titulo">Salas</div>
+            <ul id="lista-salas">
+                </ul>
+        </div>
+        <div id="main">
+            <div id="chat-central">
+                <div id="terminal-header">
+                    corujão server mode on. seja bem vindo!
+                </div>
+                <ul id="chat-list">
+                    <li class="msg-evento">[--:--] <span class="event-torneio">Conectando ao Corujão...</span> – aguarde!</li>
+                </ul>
+                <div id="terminal-bar">
+                    <form id="prompt-row" autocomplete="off">
+                        <span id="terminal-nick">Coruja</span>
+                        <span id="prompt-colon">:</span>
+                        <input type="text" id="msg" maxlength="120" required autocomplete="off" autofocus>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div id="sidebar-dir">
+            <div class="titulo">Desafios & Torneios</div>
+            <ul>
+                </ul>
         </div>
     </div>
-    <div id="mural" class="coluna"></div>
-</div>
-<script src="/socket.io/socket.io.js"></script>
-<script src="main.js"></script>
+    <div id="footer">
+        <span class="cmd">/ajuda</span>
+        <span class="cmd">/amigos</span>
+        <span class="cmd">/salas</span>
+        <span class="cmd">/rank</span>
+        <span class="cmd">/limpar</span>
+        <span class="cmd">/sair</span>
+        <span id="footer-theme-switch">
+            <div class="theme-dot dark selected" title="Tema escuro"></div>
+            <div class="theme-dot light" title="Tema claro"></div>
+        </span>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="main.js"></script>
 </body>
 </html>
