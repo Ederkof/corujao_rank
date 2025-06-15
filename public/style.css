@@ -1,0 +1,99 @@
+body {
+    margin: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #161a1d;
+    color: #fff;
+}
+#container {
+    display: flex;
+    height: 100vh;
+    max-height: 100vh;
+}
+.coluna {
+    width: 19vw;
+    min-width: 170px;
+    background: #22262a;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    overflow: hidden;
+    padding: 12px;
+    box-sizing: border-box;
+    border-right: 2px solid #252728;
+}
+#sidebar {
+    border-right: 2px solid #1a1d1f;
+}
+#mural {
+    border-left: 2px solid #1a1d1f;
+}
+#chatcentral {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    background: #181b1e;
+    border-left: 2px solid #252728;
+    border-right: 2px solid #252728;
+}
+#messages {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 16px;
+    box-sizing: border-box;
+    font-size: 1.12em;
+}
+#prompt {
+    display: flex;
+    align-items: center;
+    padding: 8px 16px;
+    background: #23272b;
+    border-top: 2px solid #1a1d1f;
+}
+#prompt input {
+    flex: 1 1 auto;
+    font-size: 1.1em;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    background: #181b1e;
+    color: #fff;
+    outline: none;
+}
+#prompt button {
+    margin-left: 8px;
+    padding: 8px 20px;
+    background: #fca311;
+    color: #181b1e;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.msg, .sistema {
+    margin-bottom: 8px;
+    word-break: break-word;
+}
+.msg .nick {
+    color: #fca311;
+    font-weight: bold;
+}
+.sistema {
+    color: #aaa;
+    font-style: italic;
+}
+.destaque {
+    background: #282c34;
+    border-left: 4px solid #fca311;
+    padding-left: 8px;
+}
+.fixo {
+    background: #fca31133;
+    color: #fca311;
+    border-left: 4px solid #fca311;
+    font-weight: bold;
+    margin-bottom: 8px;
+    padding-left: 6px;
+}
+::-webkit-scrollbar {width:8px;}
+::-webkit-scrollbar-thumb {background:#222; border-radius:6px;}
