@@ -2,13 +2,12 @@
 
 // --- Conexão Socket.IO ---
 const socket = io(); 
-let admin = false; // Flag para verificar se o usuario logado é admin
-let nick = ''; // O nickname do usuario logado
+let admin = false;
+let nick = '';
 
-// --- Funções Auxiliares de Elementos HTML ---
+// --- Funções Auxiliares ---
 function el(id) { return document.getElementById(id); }
 
-// --- Funções de Destaque e Formatação ---
 function nomeSpan(nome) {
     if (nome.toLowerCase() === nick.toLowerCase()) {
         return `<span class="nick self">@${nome}</span>`;
@@ -29,53 +28,49 @@ function destacarMencoes(texto) {
 
 function mostrarEmotions(texto) {
     return texto
-      .replace(/:coruja:/g, '🦉')
-      .replace(/:fogo:/g, '🔥')
-      .replace(/:zzz:/g, '😴')
-      .replace(/:top:/g, '😎')
-      .replace(/:alegria:/g, '😂')
-      .replace(/:viva:/g, '🙌')
-      .replace(/:pc:/g, '💻')
-      .replace(/:sorriso:/g, '😁');
+        .replace(/:coruja:/g, '🦉')
+        .replace(/:fogo:/g, '🔥')
+        .replace(/:zzz:/g, '😴')
+        .replace(/:top:/g, '😎')
+        .replace(/:alegria:/g, '😂')
+        .replace(/:viva:/g, '🙌')
+        .replace(/:pc:/g, '💻')
+        .replace(/:sorriso:/g, '😁');
 }
 
-// --- Funções de Renderização da Interface (Adaptadas para seu HTML) ---
+// --- Funções de Renderização ---
 function renderSidebar({ ultSalas, ultUsers, abertos }) {
     const listaAmigos = el('lista-amigos');
     const listaSalas = el('lista-salas');
-    const sidebarDirUl = el('sidebar-dir').querySelector('ul'); // Lista dentro da sidebar direita
+    const sidebarDirUl = el('sidebar-dir')?.querySelector('ul');
 
-    // Limpa as listas existentes
     if (listaAmigos) listaAmigos.innerHTML = '';
     if (listaSalas) listaSalas.innerHTML = '';
     if (sidebarDirUl) sidebarDirUl.innerHTML = '';
 
-    // Renderiza Amigos (ultUsers)
     if (listaAmigos && ultUsers) {
         ultUsers.forEach(u => {
             const li = document.createElement('li');
-            li.onclick = () => jogarProCentro(u, 'amigo'); // Simulação de clique local
+            li.onclick = () => jogarProCentro(u, 'amigo');
             li.textContent = u;
             listaAmigos.appendChild(li);
         });
     }
 
-    // Renderiza Salas (ultSalas)
     if (listaSalas && ultSalas) {
         ultSalas.forEach(s => {
             const li = document.createElement('li');
-            li.onclick = () => jogarProCentro(s, 'sala'); // Simulação de clique local
-            li.textContent = `#${s}`; // Adiciona '#' para salas
+            li.onclick = () => jogarProCentro(s, 'sala');
+            li.textContent = `#${s}`;
             listaSalas.appendChild(li);
         });
     }
 
-    // Renderiza Desafios/Torneios (abertos) na sidebar direita
     if (sidebarDirUl && abertos) {
-        sidebarDirUl.innerHTML += `<li class="titulo">Desafios & Torneios</li>`; // Recria o titulo
+        sidebarDirUl.innerHTML += `<li class="titulo">Desafios & Torneios</li>`;
         abertos.forEach(d => {
             const li = document.createElement('li');
-            li.onclick = () => eventoPainel(d, 'event-desafio'); // Simulação de clique local
+            li.onclick = () => eventoPainel(d, 'event-desafio');
             li.textContent = d;
             sidebarDirUl.appendChild(li);
         });
@@ -84,49 +79,41 @@ function renderSidebar({ ultSalas, ultUsers, abertos }) {
 
 function renderMural(muralData) { 
     const chatList = el('chat-list');
+    if (!chatList) return;
 
-    // Remove itens de mural anteriores para evitar duplicacao
     const oldMuralItems = chatList.querySelectorAll('.mural-item');
     oldMuralItems.forEach(item => item.remove());
 
     muralData.forEach(e => {
         const li = document.createElement('li');
         li.className = `msg-evento mural-item ${e.tipo === 'fixo' ? 'fixo' : ''}`;
-        li.innerHTML = mostrarEmotions(e.text); 
-
-        // Adiciona sempre como o primeiro filho para que o mural fique no topo
-        // (Assumindo que o #terminal-header nao eh um filho direto de chat-list mas sim acima)
-        if (chatList) {
-            chatList.insertBefore(li, chatList.firstChild); 
-        }
+        li.innerHTML = mostrarEmotions(e.text);
+        chatList.insertBefore(li, chatList.firstChild); 
     });
-    chatList.scrollTop = chatList.scrollHeight; // Rola para o final para ver a ultima mensagem
+    chatList.scrollTop = chatList.scrollHeight;
 }
 
-// --- Funções de Adicionar Mensagens ao Chat ---
 function addMsg(from, text, destaque = false, sistema = false) {
     const chatList = el('chat-list');
+    if (!chatList) return;
+
     const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-    let classe = sistema ? 'msg-sistema' : 'msg-corujao'; 
+    let classe = sistema ? 'msg-sistema' : 'msg-corujao';
+    
     if (from.toLowerCase() === nick.toLowerCase()) {
-        classe = 'msg-voce'; // Se a msg é do proprio user
+        classe = 'msg-voce';
     }
     if (destaque) classe += ' destaque';
 
-    let processedText = destacarMencoes(mostrarEmotions(text));
-
+    const processedText = destacarMencoes(mostrarEmotions(text));
     const li = document.createElement('li');
     li.className = classe;
     li.innerHTML = `<span class="hora">[${hora}]</span> ${nomeSpan(from)}: ${processedText}`;
-
-    // Adiciona ao final da lista
-    if (chatList) {
-        chatList.appendChild(li);
-        chatList.scrollTop = chatList.scrollHeight;
-    }
+    chatList.appendChild(li);
+    chatList.scrollTop = chatList.scrollHeight;
 }
 
-// --- Login e Fluxo Principal ---
+// --- Login ---
 function pedirNick() {
     nick = prompt("Digite seu nick (único):") || '';
     if (!nick) {
@@ -134,134 +121,122 @@ function pedirNick() {
         pedirNick(); 
         return;
     }
-    el('terminal-nick').textContent = nick; 
+    
+    const nickElement = el('terminal-nick');
+    if (nickElement) nickElement.textContent = nick;
+    
     socket.emit('login', nick, resp => {
         if (!resp.ok) {
             alert(resp.msg);
             pedirNick();
         } else {
             admin = resp.admin;
-            el('chat-list').innerHTML = ''; // Limpa o chat após login bem-sucedido
+            const chatList = el('chat-list');
+            if (chatList) chatList.innerHTML = '';
             addMsg('Sistema', `Bem-vindo, ${nick}! Digite /ajuda para ver os comandos.`, false, true);
-            // Emite para o servidor os eventos para ele enviar os dados iniciais
             socket.emit('sidebar'); 
             socket.emit('mural');
         }
     });
 }
 
-// --- Eventos do Socket.IO (Mensagens e Comandos do Servidor) ---
-socket.on('msg', data => {
-    addMsg(data.from, data.text, data.destaque, data.sistema);
-});
+// --- Eventos Socket.IO ---
+socket.on('msg', data => addMsg(data.from, data.text, data.destaque, data.sistema));
+socket.on('limpar', () => { const cl = el('chat-list'); if (cl) cl.innerHTML = ''; });
+socket.on('salas', salas => addMsg('Sistema', 'Salas ativas: ' + salas.map(s => `#${s.nome} (${s.usuarios})`).join(', '), false, true));
+socket.on('desafios', desafios => addMsg('Sistema', 'Desafios: ' + desafios.map(d => `${d.nome} (${d.aberto ? 'Aberto' : 'Fechado'})`).join(', '), false, true));
+socket.on('ranking', lista => addMsg('Sistema', 'TOP CORUJÕES:\n' + lista.map((e, i) => `${i+1}. @${e.nick} - ${e.pontos}`).join('\n'), false, true));
+socket.on('mural', renderMural);
+socket.on('sidebar', renderSidebar);
 
-socket.on('limpar', () => { el('chat-list').innerHTML = ''; }); 
-
-socket.on('salas', salas => {
-    // As salas ja sao renderizadas pela sidebar, entao este eh um log para o chat
-    addMsg('Sistema', 'Salas ativas: ' + salas.map(s => `#<span class="math-inline">\{s\.nome\} \(</span>{s.usuarios})`).join(', '), false, true);
-});
-
-socket.on('desafios', desafios => {
-    // Os desafios ja sao renderizados pela sidebar, entao este eh um log para o chat
-    addMsg('Sistema', 'Desafios: ' + desafios.map(d => `<span class="math-inline">\{d\.nome\} \(</span>{d.aberto ? 'Aberto' : 'Fechado'})`).join(', '), false, true);
-});
-
-socket.on('ranking', lista => {
-    let rankText = 'TOP CORUJÕES:\n' + lista.map((e, i) => `<span class="math-inline">\{i\+1\}\. @</span>{e.nick} - ${e.pontos}`).join('\n');
-    addMsg('Sistema', rankText, false, true);
-});
-
-socket.on('mural', renderMural); // Servidor envia atualizacao do mural
-socket.on('sidebar', renderSidebar); // Servidor envia atualizacao da sidebar
-
-// --- Envio de Mensagens e Comandos pelo Usuário ---
-el('enviar').onclick = enviarMsg;
-el('input').addEventListener('keypress', e => { if (e.key === 'Enter') enviarMsg(); });
-
-function enviarMsg() {
-    const val = el('input').value.trim();
-    if (!val) return;
-
-    // Se é um comando, envia para o servidor para processamento
-    if (val.startsWith('/')) {
-        socket.emit('comando', val, resp => {
-            if (!resp) return;
-            if (resp.text) addMsg('Sistema', resp.text, null, true);
-        });
-    } else {
-        // Se é uma mensagem normal, envia para o servidor
-        socket.emit('msg', val, resp => {
-            if (resp && resp.text) addMsg('Sistema', resp.text, null, true); 
-        });
+// --- Funções Auxiliares ---
+function jogarProCentro(item, tipo) {
+    const inputElement = el('input');
+    if (!inputElement) return;
+    
+    if (tipo === 'amigo') {
+        inputElement.value = `/msg ${item} `;
+    } else if (tipo === 'sala') {
+        inputElement.value = `/entrar ${item}`;
     }
-    el('input').value = ''; // Limpa o input
+    inputElement.focus();
 }
 
-// --- Lógica de Tema Claro/Escuro (do seu JS original) ---
-window.addEventListener('load', () => { // Garante que todos os recursos (imagens, etc) carregaram
+function eventoPainel(evento, tipo) {
+    const inputElement = el('input');
+    if (!inputElement) return;
+    
+    if (tipo === 'event-desafio') {
+        inputElement.value = `/desafio ${evento}`;
+        inputElement.focus();
+    }
+}
+
+function enviarMsg() {
+    const inputElement = el('input');
+    if (!inputElement) return;
+    
+    const val = inputElement.value.trim();
+    if (!val) return;
+
+    if (val.startsWith('/')) {
+        socket.emit('comando', val, resp => {
+            if (resp?.text) addMsg('Sistema', resp.text, null, true);
+        });
+    } else {
+        socket.emit('msg', val, resp => {
+            if (resp?.text) addMsg('Sistema', resp.text, null, true);
+        });
+    }
+    inputElement.value = '';
+}
+
+// --- Inicialização ---
+document.addEventListener('DOMContentLoaded', () => {
+    // Configuração de Tema
     const htmlElement = document.documentElement;
     const themeDots = document.querySelectorAll('.theme-dot');
 
     function atualizaTema(idx) {
-        if(idx === 0) { // Escuro
+        if (idx === 0) {
             htmlElement.classList.remove('claro');
-            themeDots[0].classList.add('selected');
-            themeDots[1].classList.remove('selected');
-        } else { // Claro
+            themeDots[0]?.classList.add('selected');
+            themeDots[1]?.classList.remove('selected');
+        } else {
             htmlElement.classList.add('claro');
-            themeDots[1].classList.add('selected');
-            themeDots[0].classList.remove('selected');
+            themeDots[1]?.classList.add('selected');
+            themeDots[0]?.classList.remove('selected');
         }
     }
-    // Inicializa o tema padrao (escuro)
-    atualizaTema(0); 
+    
+    atualizaTema(0);
+    themeDots[0]?.addEventListener('click', () => atualizaTema(0));
+    themeDots[1]?.addEventListener('click', () => atualizaTema(1));
 
-    themeDots[0].onclick = () => atualizaTema(0); 
-    themeDots[1].onclick = () => atualizaTema(1);
+    // Configuração de Eventos
+    const enviarBtn = el('enviar');
+    if (enviarBtn) enviarBtn.addEventListener('click', enviarMsg);
 
-    // Pede o nick apos o DOM estar pronto e a pagina carregada
-    // Atrasado um pouco para garantir que o prompt apareca apos o layout
-    setTimeout(pedirNick, 500); 
-});
+    const inputElement = el('input');
+    if (inputElement) {
+        inputElement.addEventListener('keypress', e => {
+            if (e.key === 'Enter') enviarMsg();
+        });
+    }
 
-// --- Adicionar listener para DOMContentLoaded para garantir elementos do rodapé ---
-document.addEventListener('DOMContentLoaded', () => {
-    // Lógica para os botões do rodapé (/comandos) - ATIVADO SOMENTE QUANDO O DOM ESTÁ PRONTO
-    const cmdButtons = document.querySelectorAll('.cmd');
-    cmdButtons.forEach(button => {
-        button.onclick = () => {
-            const commandText = button.textContent.trim();
-            const inputElement = el('input'); // Acessa o input
-            if (inputElement) { // Verifica se o input existe antes de usar
-                inputElement.value = commandText;
-                const event = new KeyboardEvent('keypress', { key: 'Enter', bubbles: true, cancelable: true });
-                inputElement.dispatchEvent(event);
+    // Botões de Comando
+    document.querySelectorAll('.cmd').forEach(button => {
+        button.addEventListener('click', () => {
+            if (inputElement) {
+                inputElement.value = button.textContent.trim();
+                inputElement.dispatchEvent(new KeyboardEvent('keypress', {
+                    key: 'Enter',
+                    bubbles: true
+                }));
             }
-        };
+        });
     });
-    // Foca no input de mensagem, mas APOS o login ser iniciado
-    if (el('msg')) {
-        el('msg').focus(); 
-    }
+
+    // Inicia após pequeno delay
+    setTimeout(pedirNick, 300);
 });
-
-// --- Funções Adicionais ---
-function jogarProCentro(item, tipo) {
-    // Implementação da função para centralizar o item clicado
-    if (tipo === 'amigo') {
-        el('input').value = `/msg ${item} `;
-        el('input').focus();
-    } else if (tipo === 'sala') {
-        el('input').value = `/entrar ${item}`;
-        el('input').focus();
-    }
-}
-
-function eventoPainel(evento, tipo) {
-    // Implementação da função para exibir detalhes do evento
-    if (tipo === 'event-desafio') {
-        el('input').value = `/desafio ${evento}`;
-        el('input').focus();
-    }
-}
