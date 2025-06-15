@@ -1,4 +1,4 @@
-// Corujão Server - Versão Final
+// Corujão Server - Versão Final Corrigida
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -19,6 +19,7 @@ const adminNick = "ederkof";
 app.use(express.static(path.join(__dirname, 'public')));
 
 function unicoNick(nick) {
+    // Garante que o nick não está em uso por nenhum usuário conectado
     return !Object.values(usuarios).some(u => u.nick === nick);
 }
 
@@ -115,7 +116,7 @@ io.on('connection', socket => {
                 cb({ ok: true, text: 'Emojis: :coruja: 🦉 :sorriso: 😁 :fogo: 🔥' });
                 break;
             case '/logout':
-                sair(socket, usuario, true);
+                sair(socket, usuario, true); // logout explícito
                 break;
             case '/admin':
                 if (!usuario.admin) { cb({ ok: false, text: 'Somente admin.' }); break; }
@@ -177,12 +178,18 @@ io.on('connection', socket => {
 
     socket.on('disconnect', () => {
         if (!usuario) return;
-        sair(socket, usuario, false);
+        sair(socket, usuario, false); // desconexão inesperada
     });
 });
 
 function mudarSala(socket, usuario, sala) {
-    salas[usuario.sala] = salas[usuario.sala]?.filter(n => n !== usuario.nick) || [];
+    // Remove usuário da sala antiga
+    if (salas[usuario.sala]) {
+        salas[usuario.sala] = salas[usuario.sala].filter(n => n !== usuario.nick);
+        if (salas[usuario.sala].length === 0 && usuario.sala !== 'geral') {
+            delete salas[usuario.sala]; // remove sala vazia (menos 'geral')
+        }
+    }
     socket.leave(usuario.sala);
     usuario.sala = sala;
     if (!salas[sala]) salas[sala] = [];
@@ -193,17 +200,22 @@ function mudarSala(socket, usuario, sala) {
 }
 
 function sair(socket, usuario, logout) {
-    salas[usuario.sala] = salas[usuario.sala]?.filter(n => n !== usuario.nick) || [];
+    // Remove usuário de todas as salas em que está
+    Object.keys(salas).forEach(sala => {
+        salas[sala] = salas[sala].filter(n => n !== usuario.nick);
+        if (salas[sala].length === 0 && sala !== 'geral') {
+            delete salas[sala];
+        }
+    });
     socket.leave(usuario.sala);
+    // Remove usuário globalmente
+    delete usuarios[socket.id];
     if (logout) {
         socket.emit('msg', { from: 'Sistema', text: 'Logout realizado!' });
-        delete usuarios[socket.id];
-    } else {
-        usuario.sala = 'geral';
-        salas.geral.push(usuario.nick);
-        socket.join('geral');
-        socket.emit('msg', { from: 'Sistema', text: 'Você voltou para o chat geral!' });
+        // Não faz mais nada, nick está liberado!
     }
+    // Não insere o usuário de volta em 'geral' na desconexão
+    // Atualiza sidebar para todos
     io.emit('sidebar', getSidebar());
 }
 
