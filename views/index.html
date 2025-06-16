@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Corujão Terminal</title>
   <link href="https://fonts.googleapis.com/css2?family=Electrolize&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/css/style.css"> <!-- CORRIGIDO -->
 </head>
 <body>
   <div id="layout">
@@ -13,14 +13,12 @@
     <div id="sidebar-esq">
       <div class="sidebar-titulo">Amigos Online</div>
       <ul id="lista-amigos">
-        <!-- Dinâmico via JS -->
         <li class="skeleton">carregando...</li>
         <li class="skeleton">carregando...</li>
       </ul>
       
       <div class="sidebar-titulo">Salas Ativas</div>
       <ul id="lista-salas">
-        <!-- Dinâmico via JS -->
         <li class="skeleton">carregando...</li>
         <li class="skeleton">carregando...</li>
       </ul>
@@ -34,7 +32,6 @@
         </div>
         
         <ul id="chat-list">
-          <!-- Mensagens iniciais -->
           <li class="msg-sistema">Conectando ao servidor...</li>
           <li class="msg-evento">[Sistema] Digite /ajuda para ver os comandos</li>
         </ul>
@@ -75,13 +72,12 @@
     </div>
   </div>
 
-  <!-- Scripts -->
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="main.js"></script>
+  <!-- Scripts CORRIGIDOS (usando caminhos absolutos) -->
+  <script src="/socket.io/socket.io.js"></script> <!-- Usando o fornecido pelo servidor -->
+  <script src="/js/main.js"></script> <!-- CORRIGIDO -->
   
-  <!-- Funções Inline (apenas para exemplo) -->
   <script>
-    // Funções temporárias até o JS carregar
+    // Funções temporárias
     function comandoRapido(cmd) {
       const input = document.getElementById('msg');
       if (input) {
@@ -96,6 +92,7 @@
         dot.classList.toggle('selected', 
           (tema === 'escuro' && dot.classList.contains('dark')) || 
           (tema === 'claro' && dot.classList.contains('light'))
+        );
       });
     }
   </script>

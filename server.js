@@ -14,7 +14,7 @@ const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const socketIO = require('socket.io');
 const http = require('http');
-const path = require('path'); // Adicionado para possível uso com arquivos estáticos
+const path = require('path');
 
 // App Configuration
 const app = express();
@@ -48,7 +48,7 @@ mongoose.connect(MONGODB_URI, {
   process.exit(1);
 });
 
-// Modelos (mantidos iguais)
+// Modelos
 const userSchema = new mongoose.Schema({
   username: { 
     type: String, 
@@ -113,6 +113,8 @@ const sessionStore = MongoStore.create({
 
 // Middlewares
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public'))); // Servir arquivos estáticos
+
 app.use(session({
   secret: process.env.SESSION_SECRET || require('crypto').randomBytes(64).toString('hex'),
   store: sessionStore,
@@ -126,105 +128,106 @@ app.use(session({
   }
 }));
 
-// =============================================
-// ROTA RAIZ ADICIONADA AQUI (NOVA)
-// =============================================
+// Rotas para páginas HTML
 app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Corujão Chat</title>
-      <style>
-        body { 
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          background-color: #f5f5f5;
-          margin: 0;
-          padding: 20px;
-          color: #333;
-        }
-        .container {
-          max-width: 800px;
-          margin: 0 auto;
-          background: white;
-          padding: 30px;
-          border-radius: 8px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 { 
-          color: #2c3e50;
-          text-align: center;
-        }
-        .status {
-          background: #2ecc71;
-          color: white;
-          padding: 10px 20px;
-          border-radius: 20px;
-          display: inline-block;
-          margin: 10px 0;
-        }
-        .routes {
-          background: #f8f9fa;
-          padding: 20px;
-          border-radius: 5px;
-          margin-top: 20px;
-        }
-        .route {
-          margin: 10px 0;
-          padding: 10px;
-          border-left: 3px solid #3498db;
-          background: white;
-        }
-        .method {
-          font-weight: bold;
-          color: #3498db;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>🦉 Corujão Chat - Backend</h1>
-        <div style="text-align: center;">
-          <div class="status">Servidor operacional ✅</div>
-        </div>
-        
-        <div class="routes">
-          <h3>📡 Endpoints disponíveis:</h3>
-          
-          <div class="route">
-            <span class="method">POST</span> /register - Registrar novo usuário
-          </div>
-          
-          <div class="route">
-            <span class="method">POST</span> /login - Autenticar usuário
-          </div>
-          
-          <div class="route">
-            <span class="method">WEBSOCKET</span> / - Conexão Socket.IO para chat em tempo real
-          </div>
-        </div>
-        
-        <div style="margin-top: 30px; text-align: center; color: #7f8c8d;">
-          <small>${new Date().toLocaleString('pt-BR')} | Ambiente: ${process.env.NODE_ENV || 'development'}</small>
-        </div>
-      </div>
-    </body>
-    </html>
-  `);
+  res.sendFile(path.join(__dirname, 'views', 'index.html'));
 });
 
-// Rotas existentes mantidas abaixo...
+app.get('/chat', (req, res) => {
+  res.sendFile(path.join(__dirname, 'views', 'chat.html'));
+});
+
+// Rotas de API
 app.post('/register', async (req, res) => {
-  /* ... (mantido igual) ... */
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = new User({ username, password: hashedPassword });
+    await user.save();
+
+    res.status(201).json({ message: 'User registered successfully' });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/login', async (req, res) => {
-  /* ... (mantido igual) ... */
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    const user = await User.findOne({ username }).select('+password');
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    req.session.userId = user._id;
+    req.session.username = user.username;
+    req.session.role = user.role;
+
+    res.json({ 
+      message: 'Login successful',
+      user: {
+        username: user.username,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// Socket.IO (mantido igual)
+// Socket.IO
 io.on('connection', (socket) => {
-  /* ... (mantido igual) ... */
+  console.log('New user connected');
+
+  socket.on('joinRoom', async (room) => {
+    socket.join(room);
+    const messages = await Message.find({ room }).sort({ createdAt: -1 }).limit(50);
+    socket.emit('previousMessages', messages.reverse());
+  });
+
+  socket.on('chatMessage', async (data) => {
+    try {
+      const { room, text } = data;
+      const username = socket.request.session?.username || 'Anonymous';
+      
+      const message = new Message({
+        user: username,
+        text,
+        room
+      });
+      
+      await message.save();
+      io.to(room).emit('message', message);
+    } catch (error) {
+      console.error('Error saving message:', error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
 });
 
 // Server Initialization
