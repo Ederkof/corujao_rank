@@ -17,46 +17,90 @@ const io = socketIO(server, {
   }
 });
 
-// Conexão com MongoDB (Versão Atualizada)
+// Conexão com MongoDB (Versão Robustecida)
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ Conectado ao MongoDB Atlas!'))
   .catch(err => {
     console.error('❌ ERRO no MongoDB:', err.message);
-    process.exit(1);
+    process.exit(1); // Encerra o processo em caso de erro
   });
 
 // Modelos
 const User = mongoose.model('User', new mongoose.Schema({
-  username: { type: String, unique: true, required: true },
-  password: { type: String, required: true },
-  role: { type: String, enum: ['user', 'admin'], default: 'user' },
-  lastSeen: { type: Date, default: Date.now }
-}));
+  username: { 
+    type: String, 
+    unique: true, 
+    required: true,
+    trim: true,
+    minlength: 3,
+    maxlength: 20
+  },
+  password: { 
+    type: String, 
+    required: true,
+    minlength: 6
+  },
+  role: { 
+    type: String, 
+    enum: ['user', 'admin'], 
+    default: 'user' 
+  },
+  lastSeen: { 
+    type: Date, 
+    default: Date.now 
+  }
+}, { timestamps: true }));
 
 const Message = mongoose.model('Message', new mongoose.Schema({
-  user: { type: String, required: true },
-  text: { type: String, required: true },
-  room: { type: String, default: 'geral' },
-  createdAt: { type: Date, default: Date.now }
+  user: { 
+    type: String, 
+    required: true 
+  },
+  text: { 
+    type: String, 
+    required: true,
+    maxlength: 500 
+  },
+  room: { 
+    type: String, 
+    default: 'geral',
+    index: true // Melhora performance em buscas por sala
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now,
+    index: true 
+  }
 }));
 
 // Middlewares
 app.use(express.json());
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'corujao-secret',
-  store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
+  secret: process.env.SESSION_SECRET,
+  store: MongoStore.create({
+    mongoUrl: process.env.MONGODB_URI,
+    collectionName: 'sessions',
+    ttl: 24 * 60 * 60 // 1 dia em segundos
+  }),
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false }
+  cookie: { 
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 1 dia
+  }
 }));
 
-// Rotas de Autenticação
+// Rotas de Autenticação (com validações melhoradas)
 app.post('/register', async (req, res) => {
   try {
     const { username, password } = req.body;
     
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Usuário e senha são obrigatórios' });
+    // Validação reforçada
+    if (!username || !password || username.length < 3 || password.length < 6) {
+      return res.status(400).json({ 
+        error: 'Usuário (min 3 chars) e senha (min 6 chars) são obrigatórios' 
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -70,13 +114,20 @@ app.post('/register', async (req, res) => {
     await user.save();
     res.status(201).json({ success: true });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ 
+      error: error.code === 11000 ? 'Usuário já existe' : error.message 
+    });
   }
 });
 
 app.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Credenciais necessárias' });
+    }
+
     const user = await User.findOne({ username });
     
     if (!user || !(await bcrypt.compare(password, user.password))) {
@@ -94,14 +145,14 @@ app.post('/login', async (req, res) => {
       user: req.session.user
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Erro no servidor' });
   }
 });
 
-// Socket.IO Logic
+// Socket.IO Logic (com tratamento de erros melhorado)
 io.on('connection', (socket) => {
-  console.log('🦉 Novo usuário conectado');
-  
+  console.log('🦉 Nova conexão:', socket.id);
+
   socket.on('login', async (nick, callback) => {
     try {
       const user = await User.findOne({ username: nick });
@@ -111,6 +162,7 @@ io.on('connection', (socket) => {
       }
 
       socket.user = {
+        id: user._id,
         nick: user.username,
         admin: user.role === 'admin'
       };
@@ -125,11 +177,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('msg', async (text, room = 'geral', callback) => {
-    if (!socket.user?.nick) {
-      return callback({ error: 'Não autenticado' });
-    }
-    
     try {
+      if (!socket.user?.nick) {
+        throw new Error('Não autenticado');
+      }
+
+      if (!text || text.length > 500) {
+        throw new Error('Mensagem inválida');
+      }
+
       const message = new Message({
         user: socket.user.nick,
         text,
@@ -137,6 +193,7 @@ io.on('connection', (socket) => {
       });
       
       await message.save();
+      
       io.to(room).emit('msg', {
         from: socket.user.nick,
         text,
@@ -146,25 +203,27 @@ io.on('connection', (socket) => {
       
       callback({ success: true });
     } catch (err) {
-      console.error('Erro ao salvar mensagem:', err);
-      callback({ error: 'Erro ao enviar mensagem' });
+      console.error('Erro ao enviar mensagem:', err);
+      callback({ error: err.message || 'Erro ao enviar mensagem' });
     }
   });
 
   socket.on('join', (room) => {
-    if (!socket.user?.nick) return;
+    if (!socket.user?.nick || !room) return;
     
     if (socket.room) {
       socket.leave(socket.room);
+      console.log(`${socket.user.nick} saiu da sala ${socket.room}`);
     }
     
     socket.join(room);
     socket.room = room;
+    console.log(`${socket.user.nick} entrou na sala ${room}`);
     socket.emit('system', `Você entrou na sala: ${room}`);
   });
 
   socket.on('disconnect', () => {
-    console.log(`Usuário ${socket.user?.nick || 'desconhecido'} desconectado`);
+    console.log(`❌ ${socket.user?.nick || socket.id} desconectado`);
   });
 });
 
@@ -172,4 +231,5 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 4040;
 server.listen(PORT, () => {
   console.log(`🦉 Servidor rodando na porta ${PORT}`);
+  console.log(`🔗 MongoDB: ${process.env.MONGODB_URI?.split('@')[1] || 'configurado'}`);
 });
