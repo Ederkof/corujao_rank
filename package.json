@@ -1,4 +1,4 @@
-k{
+{
   "name": "corujao-chat",
   "version": "1.0.0",
   "description": "Chat em tempo real com Socket.IO e MongoDB",
