@@ -1,12 +1,12 @@
-// main.js - Corujão Terminal (Versão Integrada)
+// main.js - Corujão Terminal (Versão Produção)
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Configuração Inicial ---
-    const socket = io('https://seu-app.onrender.com', {
+    const API_BASE = 'https://corujao-rank-1.onrender.com';
+
+    const socket = io(API_BASE, {
         withCredentials: true,
         autoConnect: false
     });
 
-    // --- Estado Global ---
     const state = {
         user: null,
         currentRoom: 'geral',
@@ -14,24 +14,21 @@ document.addEventListener('DOMContentLoaded', () => {
         onlineUsers: []
     };
 
-    // --- Elementos da UI ---
     const UI = {
         chatList: document.getElementById('chat-list'),
         msgInput: document.getElementById('msg'),
         nickDisplay: document.getElementById('terminal-nick'),
         sidebarUsers: document.getElementById('lista-amigos'),
         sidebarRooms: document.getElementById('lista-salas'),
-        adminPanel: document.createElement('div') // Criaremos dinamicamente
+        adminPanel: document.createElement('div')
     };
 
-    // --- Inicialização ---
     function init() {
         setupEventListeners();
         showLoginModal();
         setupAdminPanel();
     }
 
-    // --- Sistema de Login ---
     function showLoginModal() {
         const modalHTML = `
             <div class="modal-overlay active">
@@ -49,13 +46,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `;
-        
+
         document.body.insertAdjacentHTML('beforeend', modalHTML);
-        
         document.getElementById('login-btn').addEventListener('click', handleLogin);
         document.getElementById('register-btn').addEventListener('click', handleRegister);
-        
-        // Enter key support
         document.getElementById('login-password').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') handleLogin();
         });
@@ -64,16 +58,17 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleLogin() {
         const username = document.getElementById('login-username').value.trim();
         const password = document.getElementById('login-password').value;
-        
+
         try {
-            const response = await fetch('/login', {
+            const response = await fetch(`${API_BASE}/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ username, password })
             });
-            
+
             const data = await response.json();
-            
+
             if (data.success) {
                 state.user = data.user;
                 state.isAdmin = data.user.role === 'admin';
@@ -91,20 +86,21 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleRegister() {
         const username = document.getElementById('login-username').value.trim();
         const password = document.getElementById('login-password').value;
-        
+
         if (username.length < 3) {
             return showError('Nick precisa ter pelo menos 3 caracteres');
         }
-        
+
         try {
-            const response = await fetch('/register', {
+            const response = await fetch(`${API_BASE}/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ username, password })
             });
-            
+
             const data = await response.json();
-            
+
             if (data.success) {
                 showError('Conta criada! Faça login agora', 'success');
             } else {
@@ -122,14 +118,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showError(message, type = 'error') {
         const errorEl = document.getElementById('login-error');
+        if (!errorEl) return;
         errorEl.textContent = message;
         errorEl.className = `error-message ${type}`;
     }
 
-    // --- Configuração do Socket.IO ---
     function setupSocketConnection() {
         socket.connect();
-        
+
         socket.on('connect', () => {
             socket.emit('login', state.user.username, (response) => {
                 if (response.ok) {
@@ -139,39 +135,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         });
-        
+
         socket.on('msg', (data) => {
             addMessage(data.from, data.text, data.admin);
         });
-        
+
         socket.on('system', (message) => {
             addSystemMessage(message);
         });
-        
+
         socket.on('users:update', (users) => {
             state.onlineUsers = users;
             updateOnlineUsers();
         });
-        
+
         socket.on('disconnect', () => {
             addSystemMessage('Conexão perdida. Tentando reconectar...');
         });
     }
 
-    // --- Funções do Chat ---
     function addMessage(from, text, isAdmin = false) {
         const messageElement = document.createElement('li');
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        
+
         messageElement.className = from === state.user.username ? 'msg-voce' : 'msg-corujao';
         if (isAdmin) messageElement.classList.add('admin-msg');
-        
+
         messageElement.innerHTML = `
             <span class="hora">[${time}]</span>
             ${formatNickname(from)}: 
             ${formatMessage(text)}
         `;
-        
+
         UI.chatList.appendChild(messageElement);
         scrollChatToBottom();
     }
@@ -187,45 +182,33 @@ document.addEventListener('DOMContentLoaded', () => {
     function formatNickname(nick) {
         const isSelf = nick === state.user.username;
         const isAdmin = state.onlineUsers.find(u => u.nick === nick)?.admin;
-        
-        return `
-            <span class="nick ${isSelf ? 'self' : ''} ${isAdmin ? 'admin' : ''}">
-                @${nick}
-            </span>
-        `;
+        return `<span class="nick ${isSelf ? 'self' : ''} ${isAdmin ? 'admin' : ''}">@${nick}</span>`;
     }
 
     function formatMessage(text) {
-        // Processa emotions e menções
         return text
             .replace(/:coruja:/g, '🦉')
             .replace(/:fogo:/g, '🔥')
-            .replace(/@(\w+)/g, (match, nick) => {
-                return formatNickname(nick);
-            });
+            .replace(/@(\w+)/g, (match, nick) => formatNickname(nick));
     }
 
     function scrollChatToBottom() {
         UI.chatList.scrollTop = UI.chatList.scrollHeight;
     }
 
-    // --- Controles do Chat ---
     function setupEventListeners() {
-        // Envio de mensagem
         document.getElementById('prompt-row').addEventListener('submit', (e) => {
             e.preventDefault();
             sendMessage();
         });
-        
-        // Comandos rápidos
+
         document.querySelectorAll('.cmd').forEach(cmd => {
             cmd.addEventListener('click', () => {
                 UI.msgInput.value = cmd.textContent.replace('/', '');
                 UI.msgInput.focus();
             });
         });
-        
-        // Teclas de atalho
+
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key === 'l') {
                 e.preventDefault();
@@ -237,24 +220,22 @@ document.addEventListener('DOMContentLoaded', () => {
     function sendMessage() {
         const text = UI.msgInput.value.trim();
         if (!text || !state.user) return;
-        
+
         if (text.startsWith('/')) {
             handleCommand(text);
         } else {
             socket.emit('msg', text, state.currentRoom, (response) => {
-                if (response.error) {
-                    addSystemMessage(response.error);
-                }
+                if (response.error) addSystemMessage(response.error);
             });
         }
-        
+
         UI.msgInput.value = '';
     }
 
     function handleCommand(cmd) {
         const args = cmd.slice(1).split(' ');
         const command = args[0].toLowerCase();
-        
+
         switch (command) {
             case 'sala':
                 changeRoom(args[1] || 'geral');
@@ -265,7 +246,6 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'admin':
                 if (state.isAdmin) showAdminPanel();
                 break;
-            // ... outros comandos
             default:
                 addSystemMessage(`Comando desconhecido: ${command}`);
         }
@@ -281,7 +261,6 @@ document.addEventListener('DOMContentLoaded', () => {
         UI.chatList.innerHTML = '';
     }
 
-    // --- Sistema de Admin ---
     function setupAdminPanel() {
         UI.adminPanel.id = 'admin-panel';
         UI.adminPanel.className = 'admin-panel';
@@ -293,10 +272,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="admin-btn" data-action="broadcast">Anúncio</button>
             </div>
         `;
-        
         document.body.appendChild(UI.adminPanel);
-        
-        // Event listeners para botões admin
+
         UI.adminPanel.querySelectorAll('.admin-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const action = btn.dataset.action;
@@ -308,13 +285,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleAdminAction(action) {
         const nick = prompt(`Digite o nick para ${action}:`);
         if (!nick) return;
-        
+
         switch (action) {
             case 'ban':
                 const reason = prompt('Motivo do banimento:');
                 socket.emit('admin:ban', nick, reason);
                 break;
-            // ... outras ações
         }
     }
 
@@ -322,18 +298,13 @@ document.addEventListener('DOMContentLoaded', () => {
         UI.adminPanel.style.display = state.isAdmin ? 'block' : 'none';
     }
 
-    // --- Atualização da UI ---
     function updateUIAfterLogin() {
-        // Atualiza nick exibido
         UI.nickDisplay.textContent = state.user.username;
-        
-        // Mostra controles admin
         if (state.isAdmin) {
             document.body.classList.add('admin-mode');
             showAdminPanel();
         }
-        
-        // Foca no input
+        UI.msgInput.disabled = false;
         UI.msgInput.focus();
     }
 
@@ -353,19 +324,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function loadInitialData() {
-        // Carrega mensagens iniciais
-        fetch(`/messages?room=${state.currentRoom}`)
+        fetch(`${API_BASE}/messages?room=${state.currentRoom}`, {
+            credentials: 'include'
+        })
             .then(res => res.json())
             .then(messages => {
-                messages.forEach(msg => {
-                    addMessage(msg.user, msg.text);
-                });
+                messages.forEach(msg => addMessage(msg.user, msg.text));
             });
-        
-        // Carrega usuários online
+
         socket.emit('get:users');
     }
 
-    // Inicia a aplicação
     init();
 });
