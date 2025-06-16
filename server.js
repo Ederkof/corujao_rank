@@ -3,7 +3,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
-const MongoStore = require('connect-mongo').default; // .default é crucial
+const MongoStore = require('connect-mongo'); // Sintaxe atualizada
 const socketIO = require('socket.io');
 const http = require('http');
 
@@ -80,20 +80,17 @@ const Message = mongoose.model('Message', new mongoose.Schema({
   }
 }));
 
-// Configuração de Sessão Antifalha
+// Configuração de Sessão Atualizada
 const sessionStore = MongoStore.create({
   mongoUrl: process.env.MONGODB_URI,
   dbName: 'corujao_chat',
-  collectionName: 'app_sessions',
-  mongoOptions: {
-    connectTimeoutMS: 30000,
-    socketTimeoutMS: 45000
-  },
+  collectionName: 'sessions',
   ttl: 86400, // 1 dia em segundos
   autoRemove: 'interval',
   autoRemoveInterval: 60 // Limpeza a cada 60 minutos
 });
 
+// Middlewares
 app.use(express.json());
 app.use(session({
   secret: process.env.SESSION_SECRET || 'seguro_' + Math.random().toString(36).substring(2, 15),
@@ -107,7 +104,7 @@ app.use(session({
   }
 }));
 
-// Rotas Fortificadas
+// Rotas
 app.post('/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -130,6 +127,7 @@ app.post('/register', async (req, res) => {
     await user.save();
     res.status(201).json({ success: true });
   } catch (err) {
+    console.error('Erro no registro:', err);
     res.status(500).json({ error: 'Erro no servidor' });
   }
 });
@@ -143,6 +141,9 @@ app.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Credenciais inválidas' });
     }
     
+    // Atualiza lastSeen
+    await User.updateOne({ _id: user._id }, { lastSeen: Date.now() });
+    
     req.session.user = {
       id: user._id,
       username: user.username,
@@ -151,17 +152,23 @@ app.post('/login', async (req, res) => {
     
     res.json({ success: true, user: req.session.user });
   } catch (err) {
+    console.error('Erro no login:', err);
     res.status(500).json({ error: 'Erro no servidor' });
   }
 });
 
-// Socket.IO à Prova de Balas
+// Socket.IO
 io.on('connection', (socket) => {
   console.log(`⚡ Nova conexão: ${socket.id}`);
 
   socket.on('login', async (nick, callback) => {
     try {
-      const user = await User.findOne({ username: nick });
+      const user = await User.findOneAndUpdate(
+        { username: nick },
+        { lastSeen: Date.now() },
+        { new: true }
+      );
+      
       if (!user) return callback({ ok: false, msg: 'Usuário não encontrado' });
 
       socket.user = {
@@ -173,6 +180,7 @@ io.on('connection', (socket) => {
       callback({ ok: true, admin: socket.user.admin });
       socket.emit('system', `Bem-vindo, ${nick}!`);
     } catch (err) {
+      console.error('Erro no login via socket:', err);
       callback({ ok: false, msg: 'Erro no servidor' });
     }
   });
@@ -198,6 +206,7 @@ io.on('connection', (socket) => {
       
       callback({ success: true });
     } catch (err) {
+      console.error('Erro ao enviar mensagem:', err);
       callback({ error: err.message });
     }
   });
@@ -207,15 +216,15 @@ io.on('connection', (socket) => {
   });
 });
 
-// Inicialização Segura
+// Inicialização
 const PORT = process.env.PORT || 4040;
 server.listen(PORT, () => {
   console.log(`🦉 Servidor rodando na porta ${PORT}`);
   console.log(`🔗 Banco de dados: corujao_chat`);
-  console.log(`🔐 Sessões: corujao_chat.app_sessions`);
+  console.log(`🔐 Sessões: corujao_chat.sessions`);
 });
 
-// Catch-all para erros não tratados
+// Tratamento de erros
 process.on('unhandledRejection', (err) => {
   console.error('💥 Erro não tratado:', err);
 });
