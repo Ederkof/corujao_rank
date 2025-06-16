@@ -12,28 +12,32 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
+
+const FRONTEND_URL = process.env.FRONTEND_URL || '*';
+
 const io = socketIO(server, {
   cors: {
-    origin: process.env.FRONTEND_URL,
+    origin: FRONTEND_URL,
     methods: ['GET', 'POST'],
     credentials: true
   }
 });
 
-// Middlewares
+// Middleware CORS e JSON
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
+  origin: FRONTEND_URL,
   credentials: true
 }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// MongoDB
+// MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) {
-  console.error('❌ MONGODB_URI not defined');
+  console.error('❌ MONGODB_URI não definido');
   process.exit(1);
 }
+
 mongoose.connect(MONGODB_URI, {
   dbName: 'corujao_chat',
   connectTimeoutMS: 30000,
@@ -69,14 +73,14 @@ const messageSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 const Message = mongoose.model('Message', messageSchema);
 
-// Sessões
+// Session configuration
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || require('crypto').randomBytes(64).toString('hex'),
   store: MongoStore.create({
     mongoUrl: MONGODB_URI,
     dbName: 'corujao_chat',
     collectionName: 'sessions',
-    ttl: 86400
+    ttl: 86400 // 1 dia
   }),
   resave: false,
   saveUninitialized: false,
@@ -88,7 +92,11 @@ const sessionMiddleware = session({
   }
 });
 app.use(sessionMiddleware);
-io.use((socket, next) => sessionMiddleware(socket.request, {}, next));
+
+// Integra sessão com Socket.IO
+io.use((socket, next) => {
+  sessionMiddleware(socket.request, {}, next);
+});
 
 // Rotas
 app.get('/', (req, res) => {
@@ -100,29 +108,48 @@ app.get('/chat', (req, res) => {
 });
 
 app.post('/register', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Username e senha são obrigatórios' });
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username e senha são obrigatórios' });
 
-  const userExists = await User.findOne({ username });
-  if (userExists) return res.status(400).json({ error: 'Nome de usuário já existe' });
+    const userExists = await User.findOne({ username });
+    if (userExists) return res.status(400).json({ error: 'Nome de usuário já existe' });
 
-  const hashed = await bcrypt.hash(password, 10);
-  await new User({ username, password: hashed }).save();
-  res.status(201).json({ message: 'Usuário registrado' });
+    const hashed = await bcrypt.hash(password, 10);
+    await new User({ username, password: hashed }).save();
+    res.status(201).json({ message: 'Usuário registrado com sucesso' });
+  } catch (error) {
+    console.error('Erro no registro:', error);
+    res.status(500).json({ error: 'Erro interno no servidor' });
+  }
 });
 
 app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Username e senha são obrigatórios' });
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username e senha são obrigatórios' });
 
-  const user = await User.findOne({ username }).select('+password');
-  if (!user || !(await bcrypt.compare(password, user.password)))
-    return res.status(401).json({ error: 'Credenciais inválidas' });
+    const user = await User.findOne({ username }).select('+password');
+    if (!user) {
+      console.log(`Login falhou: usuário '${username}' não encontrado`);
+      return res.status(401).json({ error: 'Credenciais inválidas' });
+    }
 
-  req.session.userId = user._id;
-  req.session.username = user.username;
-  req.session.role = user.role;
-  res.json({ message: 'Login OK', user: { username: user.username, role: user.role } });
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (!passwordMatch) {
+      console.log(`Login falhou: senha incorreta para usuário '${username}'`);
+      return res.status(401).json({ error: 'Credenciais inválidas' });
+    }
+
+    // Login OK: salvar sessão
+    req.session.userId = user._id;
+    req.session.username = user.username;
+    req.session.role = user.role;
+    res.json({ message: 'Login OK', user: { username: user.username, role: user.role } });
+  } catch (error) {
+    console.error('Erro no login:', error);
+    res.status(500).json({ error: 'Erro interno no servidor' });
+  }
 });
 
 app.get('/me', (req, res) => {
@@ -130,23 +157,33 @@ app.get('/me', (req, res) => {
   res.json({ authenticated: true, user: { username: req.session.username, role: req.session.role } });
 });
 
-// WebSocket
+// WebSocket handlers
 io.on('connection', socket => {
   const username = socket.request.session?.username || 'Anônimo';
   console.log(`🟢 ${username} conectado`);
 
   socket.on('joinRoom', async room => {
-    socket.join(room);
-    const messages = await Message.find({ room }).sort({ createdAt: -1 }).limit(50);
-    socket.emit('previousMessages', messages.reverse());
+    try {
+      socket.join(room);
+      const messages = await Message.find({ room }).sort({ createdAt: -1 }).limit(50);
+      socket.emit('previousMessages', messages.reverse());
+    } catch (err) {
+      console.error('Erro ao carregar mensagens:', err);
+    }
   });
 
   socket.on('chatMessage', async data => {
-    const text = data.text;
-    const room = data.room;
-    const msg = new Message({ user: username, text, room });
-    await msg.save();
-    io.to(room).emit('message', msg);
+    try {
+      const text = data.text;
+      const room = data.room;
+      if (!text || !room) return;
+
+      const msg = new Message({ user: username, text, room });
+      await msg.save();
+      io.to(room).emit('message', msg);
+    } catch (err) {
+      console.error('Erro ao salvar mensagem:', err);
+    }
   });
 
   socket.on('disconnect', () => {
@@ -154,8 +191,8 @@ io.on('connection', socket => {
   });
 });
 
-// Inicialização
+// Inicialização do servidor
 const PORT = process.env.PORT || 4040;
 server.listen(PORT, () => {
-  console.log(`🚀 Servidor no ar na porta ${PORT}`);
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
