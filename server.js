@@ -12,14 +12,13 @@ const http = require('http');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
-const { RateLimiterMemory } = require('rate-limiter-flexible'); // Nova dependência para rate limiting
 
 // Inicialização do app
 const app = express();
 const server = http.createServer(app);
 
 // ======================
-// CONFIGURAÇÕES CRÍTICAS (ATUALIZADAS)
+// CONFIGURAÇÕES CRÍTICAS
 // ======================
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const PORT = process.env.PORT || 4040;
@@ -27,60 +26,45 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/coruja
 const SESSION_SECRET = process.env.SESSION_SECRET || uuidv4();
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Configuração do Rate Limiter
-const rateLimiter = new RateLimiterMemory({
-  points: 5, // 5 pontos
-  duration: 60, // Por 60 segundos
-});
+// Implementação de rate limiting
+const rateLimiter = {
+  ips: new Map(),
+  consume: function(ip) {
+    const now = Date.now();
+    const windowMs = 60 * 1000; // 1 minuto
+    const maxRequests = 5;
 
-// Verificação de variáveis de ambiente essenciais
-if (!process.env.MONGODB_URI) {
-  console.warn('⚠️  AVISO: Usando MongoDB local. Configure MONGODB_URI no .env para produção');
-}
-
-// ======================
-// CONFIGURAÇÃO SEGURA DE ARQUIVOS ESTÁTICOS
-// ======================
-const staticOptions = {
-  etag: false,
-  lastModified: false,
-  setHeaders: (res, filePath) => {
-    if (filePath.includes('.js')) {
-      res.set({
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'Content-Type': 'application/javascript; charset=UTF-8',
-        'X-Content-Type-Options': 'nosniff'
-      });
+    if (!this.ips.has(ip)) {
+      this.ips.set(ip, { count: 1, startTime: now });
+      return { remainingPoints: maxRequests - 1, msBeforeNext: windowMs };
     }
+
+    const ipData = this.ips.get(ip);
+    
+    if (now - ipData.startTime > windowMs) {
+      ipData.count = 1;
+      ipData.startTime = now;
+      return { remainingPoints: maxRequests - 1, msBeforeNext: windowMs };
+    }
+
+    if (ipData.count >= maxRequests) {
+      return { 
+        remainingPoints: 0, 
+        msBeforeNext: windowMs - (now - ipData.startTime),
+        isExceeded: true
+      };
+    }
+
+    ipData.count++;
+    return { 
+      remainingPoints: maxRequests - ipData.count, 
+      msBeforeNext: windowMs - (now - ipData.startTime)
+    };
   }
 };
 
-app.use(express.static(path.join(__dirname, 'public'), staticOptions));
-
-// Rota especial para garantir integridade do terminal.js
-app.get('/terminal.js', (req, res) => {
-  const filePath = path.join(__dirname, 'public', 'terminal.js');
-  fs.stat(filePath, (err, stats) => {
-    if (err) {
-      console.error('❌ Arquivo terminal.js não encontrado:', err);
-      return res.status(404).send('Arquivo não encontrado');
-    }
-
-    res.sendFile(filePath, {
-      headers: {
-        'Content-Length': stats.size,
-        'Last-Modified': new Date(stats.mtime).toUTCString()
-      }
-    }, (err) => {
-      if (err) console.error('❌ Erro ao servir terminal.js:', err);
-    });
-  });
-});
-
 // ======================
-// CONFIGURAÇÃO DO SOCKET.IO (ATUALIZADA)
+// CONFIGURAÇÃO DO SOCKET.IO
 // ======================
 const io = socketIO(server, {
   cors: {
@@ -91,9 +75,6 @@ const io = socketIO(server, {
   connectionStateRecovery: {
     maxDisconnectionDuration: 2 * 60 * 1000 // 2 minutos
   },
-  auth: {
-    timeout: 5000 // 5 segundos para autenticar
-  },
   pingTimeout: 60000,
   pingInterval: 25000
 });
@@ -103,25 +84,14 @@ const io = socketIO(server, {
 // ======================
 app.use(cors({
   origin: FRONTEND_URL,
-  credentials: true,
-  exposedHeaders: ['Content-Length', 'X-File-Size']
+  credentials: true
 }));
 
-app.use(express.json({
-  limit: '10kb',
-  verify: (req, res, buf) => {
-    req.rawBody = buf.toString();
-  }
-}));
-
-app.use(express.urlencoded({
-  extended: true,
-  limit: '10kb',
-  parameterLimit: 10
-}));
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // ======================
-// CONEXÃO COM BANCO DE DADOS (OTIMIZADA)
+// CONEXÃO COM BANCO DE DADOS
 // ======================
 mongoose.connect(MONGODB_URI, {
   dbName: 'corujao_chat',
@@ -130,136 +100,82 @@ mongoose.connect(MONGODB_URI, {
   serverSelectionTimeoutMS: 5000,
   retryWrites: true,
   retryReads: true,
-  autoIndex: NODE_ENV === 'development' // Indexação apenas em desenvolvimento
+  autoIndex: NODE_ENV === 'development'
 })
-.then(() => {
-  console.log('✅ MongoDB conectado com sucesso');
-  // Cria índices para produção
-  if (NODE_ENV === 'production') createIndexes();
-})
+.then(() => console.log('✅ MongoDB conectado com sucesso'))
 .catch(err => {
-  console.error('❌ Falha crítica na conexão com MongoDB:', err);
+  console.error('❌ Falha na conexão com MongoDB:', err);
   process.exit(1);
 });
-
-async function createIndexes() {
-  await Message.createIndexes([
-    { 'room': 1, 'createdAt': -1 },
-    { 'user': 1 }
-  ]);
-  console.log('🔍 Índices do MongoDB criados');
-}
 
 // ======================
 // MODELOS DO BANCO DE DADOS
 // ======================
 const User = mongoose.model('User', new mongoose.Schema({
-  username: { 
-    type: String, 
-    required: true, 
-    unique: true,
-    trim: true,
-    minlength: 3,
-    maxlength: 20,
-    match: /^[a-zA-Z0-9_]+$/
-  },
-  password: { 
-    type: String, 
-    required: true,
-    select: false
-  },
-  role: { 
-    type: String, 
-    enum: ['user', 'admin'], 
-    default: 'user' 
-  }
+  username: { type: String, required: true, unique: true, trim: true, minlength: 3, maxlength: 20 },
+  password: { type: String, required: true, select: false },
+  role: { type: String, enum: ['user', 'admin'], default: 'user' }
 }, { timestamps: true }));
 
 const Message = mongoose.model('Message', new mongoose.Schema({
-  user: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User',
-    required: true 
-  },
-  text: { 
-    type: String, 
-    required: true,
-    trim: true,
-    maxlength: 500 
-  },
-  room: { 
-    type: String, 
-    required: true,
-    enum: ['general', 'support', 'offtopic'] 
-  },
-  createdAt: { 
-    type: Date, 
-    default: Date.now,
-    index: true 
-  }
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  text: { type: String, required: true, trim: true, maxlength: 500 },
+  room: { type: String, required: true, enum: ['general', 'support', 'offtopic'] },
+  createdAt: { type: Date, default: Date.now, index: true }
 }));
 
 // ======================
-// CONFIGURAÇÃO DE SESSÃO (ATUALIZADA)
+// CONFIGURAÇÃO DE SESSÃO
 // ======================
 const sessionMiddleware = session({
   secret: SESSION_SECRET,
   name: 'corujao.sid',
-  store: MongoStore.create({
-    mongoUrl: MONGODB_URI,
-    ttl: 14 * 24 * 60 * 60, // 14 dias
-    autoRemove: 'interval',
-    autoRemoveInterval: 60 // Minutos
-  }),
+  store: MongoStore.create({ mongoUrl: MONGODB_URI }),
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: NODE_ENV === 'production',
     httpOnly: true,
     sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
-    maxAge: 1000 * 60 * 60 * 24 * 14, // 14 dias
-    domain: NODE_ENV === 'production' ? '.seusite.com' : undefined
+    maxAge: 1000 * 60 * 60 * 24 * 14 // 14 dias
   }
 });
 
 app.use(sessionMiddleware);
 
 // ======================
-// MIDDLEWARES DO SOCKET.IO (ATUALIZADOS)
+// MIDDLEWARES DO SOCKET.IO
 // ======================
 io.use((socket, next) => {
   sessionMiddleware(socket.request, {}, next);
 });
 
-// Middleware de rate limiting para Socket.IO
-io.use(async (socket, next) => {
-  try {
-    const ip = socket.handshake.address;
-    const rateLimitRes = await rateLimiter.consume(ip);
-    
-    socket.rateLimit = {
-      remaining: rateLimitRes.remainingPoints,
-      reset: Math.floor(Date.now() / 1000) + rateLimitRes.msBeforeNext / 1000
-    };
-    
-    next();
-  } catch (rateLimitRes) {
-    const ip = socket.handshake.address;
+io.use((socket, next) => {
+  const ip = socket.handshake.address;
+  const rateLimitRes = rateLimiter.consume(ip);
+  
+  if (rateLimitRes.isExceeded) {
     console.warn(`⏱️ Rate limit excedido para ${ip}`);
     socket.emit('rate_limit_exceeded', { 
       message: 'Muitas requisições! Espere um pouco.',
       retryAfter: Math.ceil(rateLimitRes.msBeforeNext / 1000)
     });
-    next(new Error('Rate limit excedido'));
+    return next(new Error('Rate limit excedido'));
   }
+
+  socket.rateLimit = {
+    remaining: rateLimitRes.remainingPoints,
+    reset: Math.floor(Date.now() / 1000) + rateLimitRes.msBeforeNext / 1000
+  };
+  
+  next();
 });
 
 io.use((socket, next) => {
   if (socket.request.session?.userId) {
     next();
   } else {
-    const ip = socket.handshake.address;
-    console.warn(`⛔ Conexão bloqueada de ${ip} (ID: ${socket.id})`);
+    console.warn(`⛔ Conexão bloqueada de ${socket.handshake.address}`);
     socket.emit('auth_error', { message: 'Requer autenticação' });
     next(new Error("Não autorizado"));
   }
@@ -268,23 +184,11 @@ io.use((socket, next) => {
 // ======================
 // ROTAS PRINCIPAIS
 // ======================
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'), {
-    headers: {
-      'Cache-Control': 'no-store'
-    }
-  });
-});
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/chat', (req, res) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: 'Não autorizado' });
-  }
-  res.sendFile(path.join(__dirname, 'public', 'chat.html'), {
-    headers: {
-      'Cache-Control': 'no-store'
-    }
-  });
+  if (!req.session.userId) return res.status(401).json({ error: 'Não autorizado' });
+  res.sendFile(path.join(__dirname, 'public', 'chat.html'));
 });
 
 // ======================
@@ -293,155 +197,72 @@ app.get('/chat', (req, res) => {
 app.post('/register', async (req, res) => {
   try {
     const { username, password } = req.body;
-    
     if (!username || !password || password.length < 8) {
-      return res.status(400).json({ 
-        error: 'Usuário e senha válidos são obrigatórios (mínimo 8 caracteres)' 
-      });
-    }
-
-    const existingUser = await User.findOne({ username });
-    if (existingUser) {
-      return res.status(409).json({ error: 'Nome de usuário já existe' });
+      return res.status(400).json({ error: 'Credenciais inválidas' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-    const user = new User({ 
-      username, 
-      password: hashedPassword 
-    });
-    
+    const user = new User({ username, password: hashedPassword });
     await user.save();
     res.status(201).json({ message: 'Usuário criado com sucesso' });
   } catch (error) {
-    console.error('Erro no registro:', error);
-    res.status(500).json({ error: 'Erro interno no servidor' });
+    res.status(500).json({ error: 'Erro no registro' });
   }
 });
 
 app.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Credenciais inválidas' });
-    }
-
     const user = await User.findOne({ username }).select('+password');
-    if (!user) {
-      return res.status(401).json({ error: 'Credenciais inválidas' });
-    }
-
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
+    if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
     req.session.userId = user._id;
     res.json({ message: 'Login bem-sucedido' });
   } catch (err) {
-    console.error('Erro no login:', err);
-    res.status(500).json({ error: 'Erro interno no servidor' });
+    res.status(500).json({ error: 'Erro no login' });
   }
 });
 
 app.post('/logout', (req, res) => {
   req.session.destroy(err => {
-    if (err) {
-      console.error('Erro ao destruir sessão:', err);
-      return res.status(500).json({ error: 'Erro ao fazer logout' });
-    }
-    
-    res.clearCookie('corujao.sid');
-    res.json({ message: 'Logout efetuado' });
+    if (err) return res.status(500).json({ error: 'Erro ao fazer logout' });
+    res.clearCookie('corujao.sid').json({ message: 'Logout efetuado' });
   });
 });
 
 // ======================
-// HANDLERS DO WEBSOCKET (ATUALIZADOS)
+// HANDLERS DO WEBSOCKET
 // ======================
 io.on('connection', (socket) => {
   const session = socket.request.session;
-  const ip = socket.handshake.address;
-  
-  console.log('🔌 Nova conexão:', {
-    id: socket.id,
-    user: session.userId,
-    ip: ip
-  });
+  console.log('🔌 Nova conexão:', socket.id, 'Usuário:', session.userId);
 
-  // Evento para entrar em salas
   socket.on('joinRoom', (room) => {
-    if (!['general', 'support', 'offtopic'].includes(room)) {
-      return socket.emit('error', { message: 'Sala inválida' });
+    if (['general', 'support', 'offtopic'].includes(room)) {
+      socket.join(room);
+      socket.emit('systemMessage', `Você entrou na sala ${room}`);
     }
-
-    socket.join(room);
-    socket.emit('systemMessage', { text: `Você entrou na sala ${room}` });
-    console.log(`🚪 Usuário ${session.userId} entrou na sala ${room}`);
   });
 
-  // Evento para enviar mensagens
   socket.on('sendMessage', async ({ room, text }) => {
     try {
-      if (!text || !room || text.length > 500) {
-        return socket.emit('error', { message: 'Mensagem inválida' });
-      }
-
       const message = new Message({
         user: session.userId,
-        text: text.trim(),
+        text: text?.trim().substring(0, 500),
         room
       });
-
       await message.save();
-      
-      io.to(room).emit('newMessage', {
-        user: session.userId,
-        text: message.text,
-        timestamp: message.createdAt
-      });
-
-      console.log(`✉️ Mensagem enviada por ${session.userId} em ${room}`);
+      io.to(room).emit('newMessage', message);
     } catch (err) {
-      console.error('Erro ao salvar mensagem:', err);
-      socket.emit('error', { message: 'Erro ao enviar mensagem' });
+      socket.emit('error', 'Erro ao enviar mensagem');
     }
   });
 
-  // Evento de desconexão
-  socket.on('disconnect', (reason) => {
-    console.log('🔌 Conexão encerrada:', {
-      id: socket.id,
-      user: session.userId,
-      reason: reason
-    });
+  socket.on('disconnect', () => {
+    console.log('🔌 Conexão encerrada:', socket.id);
   });
-});
-
-// ======================
-// MANUSEIO DE ERROS (ATUALIZADO)
-// ======================
-app.use((err, req, res, next) => {
-  console.error('❌ Erro não tratado:', {
-    error: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method
-  });
-  res.status(500).json({ error: 'Ocorreu um erro interno' });
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Rejeição não tratada em:', promise, 'Motivo:', reason);
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('❌ Exceção não capturada:', {
-    error: err.message,
-    stack: err.stack
-  });
-  process.exit(1);
 });
 
 // ======================
@@ -450,6 +271,17 @@ process.on('uncaughtException', (err) => {
 server.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
   console.log(`🔗 Acessível em: ${FRONTEND_URL}`);
-  console.log(`📁 Servindo arquivos estáticos de: ${path.join(__dirname, 'public')}`);
   console.log(`⚡ Modo: ${NODE_ENV}`);
+});
+
+// ======================
+// MANUSEIO DE ERROS
+// ======================
+process.on('unhandledRejection', (err) => {
+  console.error('❌ Rejeição não tratada:', err);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('❌ Exceção não capturada:', err);
+  process.exit(1);
 });
