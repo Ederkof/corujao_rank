@@ -12,7 +12,7 @@ const http = require('http');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
-const socketRateLimit = require('socket.io-rate-limit'); // Nova dependência
+const { rateLimiter } = require('socket.io-ratelimiter'); // Correção aplicada
 
 // Inicialização do app
 const app = express();
@@ -225,10 +225,17 @@ io.use((socket, next) => {
   sessionMiddleware(socket.request, {}, next);
 });
 
-io.use(socketRateLimit({
+// Configuração do rate limiter corrigida
+io.use(rateLimiter({
   windowMs: 60 * 1000, // 1 minuto
-  max: 5, // Máximo de 5 conexões por IP
-  message: 'Muitas conexões deste IP, tente novamente mais tarde'
+  max: 5, // Máximo de 5 eventos por conexão
+  onExceeded: (socket, error) => {
+    const ip = socket.handshake.address;
+    console.warn(`⏱️ Rate limit excedido para ${ip}`);
+    socket.emit('rate_limit_exceeded', { 
+      message: 'Muitas requisições! Espere um pouco.' 
+    });
+  }
 }));
 
 io.use((socket, next) => {
