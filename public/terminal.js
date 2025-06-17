@@ -285,11 +285,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function mensagemInspiradoraSala(novaSala) {
     appendLine(`<b>Você criou ou entrou na sala <span style="color:var(--azul-nick)">#${novaSala}</span>!</b>`, "terminal-info");
-    appendLine(`<span style="color:var(--verde2)">Aqui é seu espaço livre para compartilhar, criar, brincar e ser você mesmo.<br>
-Convide quem quiser, combine encontros, faça enquetes, cante, ore ou só jogue conversa fora!<br>
-Corujão é liberdade digital de verdade.<br>
-<i>Sinta-se em casa, a sala é sua!</i>
-</span>`, "terminal-info");
+    appendLine(`<span style="color:var(--verde2)">
+      Aqui é seu espaço livre para compartilhar, criar, brincar e ser você mesmo.<br>
+      Convide quem quiser, combine encontros, faça enquetes, cante, ore ou só jogue conversa fora!<br>
+      Corujão é liberdade digital de verdade.<br>
+      <i>Sinta-se em casa, a sala é sua!</i>
+    </span>`, "terminal-info");
 
     if (socket && socket.connected) {
       socket.emit('trocar_sala', {
