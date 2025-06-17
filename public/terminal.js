@@ -368,8 +368,6 @@ document.addEventListener('DOMContentLoaded', () => {
         mostrarRanking();
       } else if (comando === '/meme') {
         mostrarMemeRandom();
-      } else if (comando === '/curiosidade') {
-        mostrarCuriosidade();
       } else if (comando === '/badge') {
         mostrarBadge();
       } else if (comando === '/ajuda') {
