@@ -4,7 +4,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const socket = io(API_BASE, {
         withCredentials: true,
-        autoConnect: false
+        autoConnect: false,
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000
     });
 
     const state = {
@@ -136,8 +140,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        socket.on('msg', (data) => {
-            addMessage(data.from, data.text, data.admin);
+        socket.on('chatMessage', (data) => {
+            addMessage(data.user, data.text, data.admin);
         });
 
         socket.on('system', (message) => {
@@ -151,6 +155,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         socket.on('disconnect', () => {
             addSystemMessage('Conexão perdida. Tentando reconectar...');
+        });
+
+        socket.on('reconnect', (attemptNumber) => {
+            addSystemMessage(`Conexão restaurada após ${attemptNumber} tentativas`);
+            if (state.user) {
+                socket.emit('login', state.user.username);
+                loadInitialData();
+            }
+        });
+
+        socket.on('connect_error', (err) => {
+            addSystemMessage(`Erro de conexão: ${err.message}`);
         });
     }
 
@@ -224,7 +240,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (text.startsWith('/')) {
             handleCommand(text);
         } else {
-            socket.emit('msg', text, state.currentRoom, (response) => {
+            socket.emit('chatMessage', {
+                text,
+                room: state.currentRoom,
+                user: state.user.username
+            }, (response) => {
                 if (response.error) addSystemMessage(response.error);
             });
         }
@@ -246,6 +266,11 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'admin':
                 if (state.isAdmin) showAdminPanel();
                 break;
+            case 'privado':
+                if (args[1]) {
+                    startPrivateChat(args[1]);
+                }
+                break;
             default:
                 addSystemMessage(`Comando desconhecido: ${command}`);
         }
@@ -255,6 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.emit('join', room);
         state.currentRoom = room;
         addSystemMessage(`Entrou na sala: ${room}`);
+        loadInitialData();
     }
 
     function clearChat() {
@@ -291,6 +317,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const reason = prompt('Motivo do banimento:');
                 socket.emit('admin:ban', nick, reason);
                 break;
+            case 'mute':
+                const minutes = prompt('Minutos para silenciar:');
+                socket.emit('admin:mute', nick, minutes);
+                break;
+            case 'broadcast':
+                const message = prompt('Mensagem de anúncio:');
+                socket.emit('admin:broadcast', message);
+                break;
         }
     }
 
@@ -323,16 +357,21 @@ document.addEventListener('DOMContentLoaded', () => {
         UI.msgInput.focus();
     }
 
-    function loadInitialData() {
-        fetch(`${API_BASE}/messages?room=${state.currentRoom}`, {
-            credentials: 'include'
-        })
-            .then(res => res.json())
-            .then(messages => {
-                messages.forEach(msg => addMessage(msg.user, msg.text));
+    async function loadInitialData() {
+        try {
+            const res = await fetch(`${API_BASE}/messages?room=${state.currentRoom}`, {
+                credentials: 'include'
             });
-
-        socket.emit('get:users');
+            
+            if (!res.ok) throw new Error('Erro ao carregar mensagens');
+            
+            const messages = await res.json();
+            UI.chatList.innerHTML = '';
+            messages.forEach(msg => addMessage(msg.user, msg.text, msg.admin));
+        } catch (err) {
+            addSystemMessage('Erro ao carregar histórico de mensagens');
+            console.error(err);
+        }
     }
 
     init();

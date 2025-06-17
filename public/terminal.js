@@ -64,6 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let polling = null;
   let mensagensCache = [];
   let mensagensPrivadas = {}; // {nick: [mensagens]}
+  let socket = null; // Conexão Socket.IO
 
   // Funções utilitárias
   function appendLine(txt, className = "") {
@@ -122,6 +123,57 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/:pc:/g, '💻');
   }
 
+  // ----------- SOCKET.IO INTEGRATION -------------
+  function iniciarSocketIO() {
+    // Substitua pela URL do seu servidor Socket.IO
+    socket = io('https://corujao-rank-1.onrender.com', {
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      transports: ['websocket']
+    });
+
+    socket.on('connect', () => {
+      appendLine("[Conectado ao servidor em tempo real]", "terminal-info");
+      socket.emit('join', { usuario, sala: salaAtual });
+    });
+
+    socket.on('disconnect', () => {
+      appendLine("[Conexão perdida. Tentando reconectar...]", "terminal-erro");
+    });
+
+    socket.on('nova_mensagem', (msg) => {
+      if ((msg.sala || "geral") !== salaAtual) return;
+      
+      const hora = msg.hora || "--:--";
+      const nome = msg.nome || "anon";
+      const texto = destacarMencoes(mostrarEmotions(msg.texto || ""));
+      
+      appendLine(
+        `<span class="hora">${hora}</span> <span class="nick${nome === usuario ? ' self' : ''}">@${nome}</span>: ${texto}`,
+        nome === usuario ? "msg-voce" : "msg-corujao"
+      );
+      
+      // Atualiza cache
+      mensagensCache.push(msg);
+    });
+
+    socket.on('mensagem_privada', (data) => {
+      receberMensagemPrivada(data.de, data.mensagem);
+    });
+
+    socket.on('usuario_entrou', (nick) => {
+      appendLine(`<span class="terminal-info">@${nick} entrou na sala</span>`);
+    });
+
+    socket.on('usuario_saiu', (nick) => {
+      appendLine(`<span class="terminal-info">@${nick} saiu da sala</span>`);
+    });
+
+    socket.on('error', (err) => {
+      appendLine(`[Erro: ${err.message}]`, "terminal-erro");
+    });
+  }
+
   // ----------- CHAT INTEGRADO -------------
   async function carregarMensagensChat() {
     if (!logado) return;
@@ -154,11 +206,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function enviarMensagemBackend(texto) {
     if (!usuario) return;
-    await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nome: usuario, texto, sala: salaAtual })
-    });
+    
+    if (socket && socket.connected) {
+      socket.emit('enviar_mensagem', {
+        nome: usuario,
+        texto,
+        sala: salaAtual
+      });
+    } else {
+      // Fallback para HTTP se o Socket.IO não estiver disponível
+      await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: usuario, texto, sala: salaAtual })
+      });
+    }
   }
 
   // ----------- PRIVADO -------------
@@ -167,11 +229,20 @@ document.addEventListener('DOMContentLoaded', () => {
     mensagensPrivadas[de].push(msg);
     appendLine(`<span class="msg-privado">[PRIVADO de @${de}]: ${msg}</span>`, "msg-privado");
   }
+
   function enviarMensagemPrivada(para, msg) {
     if (!mensagensPrivadas[para]) mensagensPrivadas[para] = [];
     mensagensPrivadas[para].push(msg);
     appendLine(`<span class="msg-privado">[PRIVADO para @${para}]: ${msg}</span>`, "msg-privado");
-    // Aqui você pode integrar com backend para DM real!
+    
+    if (socket && socket.connected) {
+      socket.emit('mensagem_privada', {
+        de: usuario,
+        para,
+        mensagem: msg
+      });
+    }
+    // Implemente fallback HTTP aqui se necessário
   }
 
   // ----------- RANKING -------------
@@ -213,10 +284,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const idx = Math.floor(Math.random() * curiosidades.length);
     appendLine(`<b>Curiosidade do Dia:</b> ${curiosidades[idx]}`, "terminal-info");
   }
-
   // ----------- FLUXO PRINCIPAL -------------
   function iniciar() {
     if (polling) clearInterval(polling);
+    if (socket) socket.disconnect();
+    
     term.innerHTML = '';
     salaAtual = "geral";
     manifesto.forEach(linha => appendLine(linha, "terminal-info"));
@@ -240,6 +312,10 @@ document.addEventListener('DOMContentLoaded', () => {
     appendLine(`Bem-vindo(a), ${usuario}! Agora é sua vez de deixar história aqui no Corujão Server.`);
     appendLine("Digite /ajuda para comandos ou comece a criar.");
     logado = true;
+    
+    // Inicia conexões
+    iniciarSocketIO();
+    
     setTimeout(() => {
       carregarMensagensChat();
       polling = setInterval(carregarMensagensChat, 2000);
@@ -259,6 +335,15 @@ document.addEventListener('DOMContentLoaded', () => {
       Corujão é liberdade digital de verdade. 🦉<br>
       <i>Sinta-se em casa, a sala é sua!</i>
     </span>`, "terminal-info");
+    
+    // Atualiza sala no Socket.IO
+    if (socket && socket.connected) {
+      socket.emit('trocar_sala', {
+        usuario,
+        salaAntiga: salaAtual,
+        salaNova: novaSala
+      });
+    }
   }
 
   function processaComando(txt) {
@@ -284,93 +369,4 @@ document.addEventListener('DOMContentLoaded', () => {
         enviarMensagemPrivada(nick, mensagem);
       } else if (comando.startsWith('/memes ')) {
         const conteudo = comando.substring(7);
-        appendLine(`Seu meme enviado: <b>${conteudo}</b>`, "terminal-info");
-      } else if (comando.startsWith('/ban ')) {
-        const nick = comando.split(' ')[1];
-        appendLine(`Usuário @${nick} BANIDO! (apenas admin real pode banir)`, "terminal-info");
-      } else if (comando.startsWith('/badge ')) {
-        const nick = comando.split(' ')[1];
-        mostrarBadge(nick);
-      } else {
-        // Comandos sem argumento
-        switch (comando.toLowerCase()) {
-          case '/ajuda':
-            appendLine(`
-<b>Comandos do Corujão:</b>
-/ajuda /mural /limpar /sair /chat /sala /memes /emotions /privado /admin /badge /ranking /arcade /curiosidades<br>
-<b>DICA:</b> Use os botões do rodapé ou digite comandos.<br>
-Digite qualquer mensagem para mandar para o chat da sala atual. Use /sala nome para trocar de sala!
-            `, "terminal-info");
-            break;
-          case '/mural':
-            mural.forEach(linha => appendLine(linha, "terminal-info"));
-            break;
-          case '/limpar':
-            term.innerHTML = '';
-            break;
-          case '/sair':
-            logado = false;
-            usuario = '';
-            senha = '';
-            if (polling) clearInterval(polling);
-            iniciar();
-            return;
-          case '/chat':
-            carregarMensagensChat();
-            appendLine("[Chat atualizado!]", "terminal-info");
-            break;
-          case '/memes':
-            mostrarMemeRandom();
-            break;
-          case '/emotions':
-            appendLine('Emotions disponíveis: 🦉 😴 😂 🤣 😎 🔥 🙌 💻', "terminal-info");
-            appendLine('Use :coruja: :zzz: :alegria: :top: :fogo: :viva: :pc: nos textos', "terminal-info");
-            break;
-          case '/privado':
-            appendLine('Para mensagem privada: /privado nick mensagem', "terminal-info");
-            break;
-          case '/admin':
-            appendLine('Comando admin! Use /ban nick para banir (exemplo de admin)', "terminal-info");
-            break;
-          case '/badge':
-            mostrarBadge();
-            break;
-          case '/ranking':
-            mostrarRanking();
-            break;
-          case '/arcade':
-            appendLine('Bem-vindo ao Arcade! [Em breve: joguinhos, desafios e mais!]', "terminal-info");
-            break;
-          case '/curiosidades':
-            mostrarCuriosidade();
-            break;
-          case '/amigos':
-            appendLine('Para adicionar amigos, digite o nome deles quando for convidar para uma sala, ou envie uma mensagem para eles no chat. Em breve: gerenciamento de amigos!', "terminal-info");
-            break;
-          case '/salas':
-            appendLine('Para criar ou entrar em uma sala, use /sala nome. Exemplo: /sala louvor', "terminal-info");
-            break;
-          default:
-            appendLine('Comando não reconhecido. Digite /ajuda para ver opções.', "terminal-info");
-        }
-      }
-    } else {
-      // Mensagem para o chat real (envia ao backend)
-      if (comando.startsWith('@')) {
-        appendLine(`<span class="msg-voce">[${usuario} → ${comando.split(' ')[0]}]: ${destacarMencoes(mostrarEmotions(comando))}</span>`);
-      } else {
-        enviarMensagemBackend(comando);
-        appendLine(`<span class="msg-voce">[${usuario}]: ${destacarMencoes(mostrarEmotions(comando))}</span>`);
-      }
-    }
-    promptComando();
-  }
-
-  // --------- INTEGRAÇÃO RODAPÉ <-> TERMINAL -----------
-  window.addEventListener('rodape-cmd', e => {
-    // Executa o comando do rodapé como se tivesse digitado
-    processaComando(e.detail);
-  });
-
-  iniciar();
-});
+        appendLine(`Seu meme enviado: <b>${conteudo}</b>`, "terminal

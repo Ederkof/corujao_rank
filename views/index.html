@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Corujão Terminal</title>
   <link href="https://fonts.googleapis.com/css2?family=Electrolize&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css"> <!-- CORRIGIDO -->
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <div id="layout">
@@ -72,11 +72,8 @@
     </div>
   </div>
 
-  <!-- Scripts CORRIGIDOS (usando caminhos absolutos) -->
-  <script src="/socket.io/socket.io.js"></script> <!-- Usando o fornecido pelo servidor -->
-  <script src="/js/main.js"></script> <!-- CORRIGIDO -->
-  
-  <script>
+  <!-- Scripts na ordem correta -->
+  <script nonce="CORUJAO_NONCE">
     // Funções temporárias
     function comandoRapido(cmd) {
       const input = document.getElementById('msg');
@@ -96,5 +93,9 @@
       });
     }
   </script>
+  
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/terminal.js"></script>
+  <script src="/js/main.js"></script>
 </body>
 </html>

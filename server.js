@@ -157,6 +157,32 @@ const authenticate = (req, res, next) => {
   next();
 };
 
+// Rate limiting básico
+const rateLimit = (req, res, next) => {
+  const now = Date.now();
+  const windowMs = 60000; // 1 minuto
+  const maxRequests = 30; // Máximo de 30 requisições por minuto
+  
+  if (!req.session.requests) {
+    req.session.requests = [];
+    req.session.firstRequestTime = now;
+  }
+  
+  // Remove requisições antigas
+  req.session.requests = req.session.requests.filter(time => now - time < windowMs);
+  
+  if (req.session.requests.length >= maxRequests) {
+    const retryAfter = Math.ceil((req.session.requests[0] + windowMs - now) / 1000);
+    return res.status(429).json({
+      error: 'Muitas requisições',
+      retryAfter: `${retryAfter} segundos`
+    });
+  }
+  
+  req.session.requests.push(now);
+  next();
+};
+
 // Rotas
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'index.html'));
@@ -166,7 +192,18 @@ app.get('/chat', authenticate, (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'chat.html'));
 });
 
-app.post('/register', async (req, res) => {
+app.get('/messages', authenticate, async (req, res) => {
+  try {
+    const messages = await Message.find({ room: req.query.room || 'geral' })
+      .sort({ createdAt: -1 })
+      .limit(50);
+    res.json(messages);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao carregar mensagens' });
+  }
+});
+
+app.post('/register', rateLimit, async (req, res) => {
   try {
     const { username, password } = req.body;
     
@@ -226,7 +263,7 @@ app.post('/register', async (req, res) => {
   }
 });
 
-app.post('/login', async (req, res) => {
+app.post('/login', rateLimit, async (req, res) => {
   try {
     const { username, password } = req.body;
     
@@ -354,8 +391,18 @@ io.on('connection', async (socket) => {
     }
   });
 
+  // Evento para obter lista de usuários
+  socket.on('get:users', async () => {
+    try {
+      const users = await User.find({}, 'username role lastSeen');
+      socket.emit('users:list', users);
+    } catch (err) {
+      console.error('Erro ao buscar usuários:', err);
+    }
+  });
+
   // Evento para enviar mensagem
-  socket.on('chatMessage', async (data) => {
+  socket.on('chat:message', async (data) => {
     try {
       const { text, room } = data;
       
@@ -372,7 +419,7 @@ io.on('connection', async (socket) => {
 
       await message.save();
       
-      io.to(room).emit('message', {
+      io.to(room).emit('chat:message', {
         user: username,
         text: text.trim(),
         room,
