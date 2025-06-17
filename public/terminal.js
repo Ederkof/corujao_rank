@@ -1,4 +1,3 @@
-// terminal.js - Corujão Server: O terminal de chat mais completo do mundo!
 document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('terminal-corujano');
   const term = document.createElement('div');
@@ -50,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
     "Curiosidade musical: Muitas igrejas usam corais noturnos porque a noite inspira reflexão.",
     "A curiosidade é o motor da inteligência. Volte amanhã para mais uma curiosidade!",
     "Seja sempre livre para aprender, errar, tentar de novo e ensinar alguém. Isso é Corujão.",
-    "Você sabia? O emoji 🦉 foi lançado oficialmente em 2015.",
+    "Você sabia? O emoji de coruja foi lançado oficialmente em 2015.",
     "No Japão, corujas são símbolo de proteção e boa sorte.",
     "A maior coruja do mundo é a Bubo bubo, que pode ter até 1,80m de envergadura.",
     "Toda vez que você faz uma pergunta, uma coruja aprende um pouco mais.",
@@ -112,17 +111,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function mostrarEmotions(texto) {
-    return texto
-      .replace(/:coruja:/g, '🦉')
-      .replace(/:fogo:/g, '🔥')
-      .replace(/:zzz:/g, '😴')
-      .replace(/:top:/g, '😎')
-      .replace(/:alegria:/g, '😂')
-      .replace(/:viva:/g, '🙌')
-      .replace(/:pc:/g, '💻');
-  }
-
   // ----------- SOCKET.IO INTEGRATION -------------
   function iniciarSocketIO() {
     socket = io('https://corujao-rank-1.onrender.com', {
@@ -145,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const hora = msg.hora || "--:--";
       const nome = msg.nome || "anon";
-      const texto = destacarMencoes(mostrarEmotions(msg.texto || ""));
+      const texto = destacarMencoes(msg.texto || "");
       
       appendLine(
         `<span class="hora">${hora}</span> <span class="nick${nome === usuario ? ' self' : ''}">@${nome}</span>: ${texto}`,
@@ -184,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if ((msg.sala || "geral") !== salaAtual) return;
           const hora = msg.hora || "--:--";
           const nome = msg.nome || "anon";
-          const texto = destacarMencoes(mostrarEmotions(msg.texto || ""));
+          const texto = destacarMencoes(msg.texto || "");
           appendLine(
             `<span class="hora">${hora}</span> <span class="nick${nome === usuario ? ' self' : ''}">@${nome}</span>: ${texto}`,
             nome === usuario ? "msg-voce" : "msg-corujao"
@@ -253,26 +241,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ----------- MEMES -------------
-  function mostrarMemeRandom() {
-    const imagens = [
-      'https://api.memegen.link/images/doge/Corujao/Server.png',
-      'https://api.memegen.link/images/awesome/Corujao_is_Awesome.png',
-      'https://api.memegen.link/images/rollsafe/Use_o_Corujao/Para_chats.png'
-    ];
-    const meme = imagens[Math.floor(Math.random() * imagens.length)];
-    appendLine(`<img src="${meme}" alt="Meme" height="80">`, "terminal-info");
-  }
-
   // ----------- BADGES -------------
   function mostrarBadge(nick) {
     if (!nick) nick = usuario;
     const badges = {
-      'ederkof': '🦉🔥 Lenda Viva',
-      'admin': '🛡️ Moderador',
-      'anon': '👻 Invisível'
+      'ederkof': 'Lenda Viva',
+      'admin': 'Moderador',
+      'anon': 'Invisível'
     };
-    appendLine(`Badge de @${nick}: ${badges[nick] || '🦉 Coruja'} `, "terminal-info");
+    appendLine(`Badge de @${nick}: ${badges[nick] || 'Coruja'} `, "terminal-info");
   }
 
   // ----------- CURIOSIDADES -------------
@@ -328,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
     appendLine(`<span style="color:var(--verde2)">
       Aqui é seu espaço livre para compartilhar, criar, brincar e ser você mesmo.<br>
       Convide quem quiser, combine encontros, faça enquetes, cante, ore ou só jogue conversa fora!<br>
-      Corujão é liberdade digital de verdade. 🦉<br>
+      Corujão é liberdade digital de verdade.<br>
       <i>Sinta-se em casa, a sala é sua!</i>
     </span>`, "terminal-info");
     
@@ -361,21 +338,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const nick = partes[1];
         const mensagem = partes.slice(2).join(' ');
         enviarMensagemPrivada(nick, mensagem);
-      } else if (comando.startsWith('/memes ')) {
-        const conteudo = comando.substring(7);
-        appendLine(`Seu meme enviado: <b>${conteudo}</b>`, "terminal-info");
       } else if (comando === '/ranking') {
         mostrarRanking();
-      } else if (comando === '/meme') {
-        mostrarMemeRandom();
       } else if (comando === '/badge') {
         mostrarBadge();
+      } else if (comando === '/curiosidade') {
+        mostrarCuriosidade();
       } else if (comando === '/ajuda') {
         appendLine("<b>Comandos:</b>", "terminal-info");
         appendLine("/sala [nome] - Troca de sala", "terminal-info");
         appendLine("/privado [nick] [msg] - Mensagem privada", "terminal-info");
         appendLine("/ranking - Mostra o ranking", "terminal-info");
-        appendLine("/meme - Mostra um meme aleatório", "terminal-info");
         appendLine("/curiosidade - Mostra uma curiosidade", "terminal-info");
         appendLine("/badge - Mostra seu badge", "terminal-info");
         appendLine("/ajuda - Mostra esta ajuda", "terminal-info");
@@ -392,5 +365,3 @@ document.addEventListener('DOMContentLoaded', () => {
   // Inicia o terminal
   iniciar();
 });
-
-
