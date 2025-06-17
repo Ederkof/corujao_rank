@@ -12,18 +12,20 @@ const http = require('http');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
+const socketRateLimit = require('socket.io-rate-limit'); // Nova dependência
 
 // Inicialização do app
 const app = express();
 const server = http.createServer(app);
 
 // ======================
-// CONFIGURAÇÕES CRÍTICAS
+// CONFIGURAÇÕES CRÍTICAS (ATUALIZADAS)
 // ======================
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const PORT = process.env.PORT || 4040;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/corujao_chat';
 const SESSION_SECRET = process.env.SESSION_SECRET || uuidv4();
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Verificação de variáveis de ambiente essenciais
 if (!process.env.MONGODB_URI) {
@@ -37,13 +39,13 @@ const staticOptions = {
   etag: false,
   lastModified: false,
   setHeaders: (res, filePath) => {
-    // Headers anti-cache especialmente para JS
     if (filePath.includes('.js')) {
       res.set({
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
-        'Content-Type': 'application/javascript; charset=UTF-8'
+        'Content-Type': 'application/javascript; charset=UTF-8',
+        'X-Content-Type-Options': 'nosniff'
       });
     }
   }
@@ -54,18 +56,14 @@ app.use(express.static(path.join(__dirname, 'public'), staticOptions));
 // Rota especial para garantir integridade do terminal.js
 app.get('/terminal.js', (req, res) => {
   const filePath = path.join(__dirname, 'public', 'terminal.js');
-  
-  // Verificação de segurança do arquivo
   fs.stat(filePath, (err, stats) => {
     if (err) {
       console.error('❌ Arquivo terminal.js não encontrado:', err);
       return res.status(404).send('Arquivo não encontrado');
     }
 
-    // Serve o arquivo com headers customizados
     res.sendFile(filePath, {
       headers: {
-        'X-Content-Type-Options': 'nosniff',
         'Content-Length': stats.size,
         'Last-Modified': new Date(stats.mtime).toUTCString()
       }
@@ -76,7 +74,7 @@ app.get('/terminal.js', (req, res) => {
 });
 
 // ======================
-// CONFIGURAÇÃO DO SOCKET.IO
+// CONFIGURAÇÃO DO SOCKET.IO (ATUALIZADA)
 // ======================
 const io = socketIO(server, {
   cors: {
@@ -84,7 +82,12 @@ const io = socketIO(server, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  // Otimizações de desempenho
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000 // 2 minutos
+  },
+  auth: {
+    timeout: 5000 // 5 segundos para autenticar
+  },
   pingTimeout: 60000,
   pingInterval: 25000
 });
@@ -112,7 +115,7 @@ app.use(express.urlencoded({
 }));
 
 // ======================
-// CONEXÃO COM BANCO DE DADOS
+// CONEXÃO COM BANCO DE DADOS (OTIMIZADA)
 // ======================
 mongoose.connect(MONGODB_URI, {
   dbName: 'corujao_chat',
@@ -120,13 +123,26 @@ mongoose.connect(MONGODB_URI, {
   socketTimeoutMS: 30000,
   serverSelectionTimeoutMS: 5000,
   retryWrites: true,
-  retryReads: true
+  retryReads: true,
+  autoIndex: NODE_ENV === 'development' // Indexação apenas em desenvolvimento
 })
-.then(() => console.log('✅ MongoDB conectado com sucesso'))
+.then(() => {
+  console.log('✅ MongoDB conectado com sucesso');
+  // Cria índices para produção
+  if (NODE_ENV === 'production') createIndexes();
+})
 .catch(err => {
   console.error('❌ Falha crítica na conexão com MongoDB:', err);
-  process.exit(1); // Encerra o processo em caso de falha
+  process.exit(1);
 });
+
+async function createIndexes() {
+  await Message.createIndexes([
+    { 'room': 1, 'createdAt': -1 },
+    { 'user': 1 }
+  ]);
+  console.log('🔍 Índices do MongoDB criados');
+}
 
 // ======================
 // MODELOS DO BANCO DE DADOS
@@ -178,7 +194,7 @@ const Message = mongoose.model('Message', new mongoose.Schema({
 }));
 
 // ======================
-// CONFIGURAÇÃO DE SESSÃO
+// CONFIGURAÇÃO DE SESSÃO (ATUALIZADA)
 // ======================
 const sessionMiddleware = session({
   secret: SESSION_SECRET,
@@ -192,20 +208,38 @@ const sessionMiddleware = session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: NODE_ENV === 'production',
     httpOnly: true,
-    sameSite: 'lax',
-    maxAge: 1000 * 60 * 60 * 24 * 14 // 14 dias
+    sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 1000 * 60 * 60 * 24 * 14, // 14 dias
+    domain: NODE_ENV === 'production' ? '.seusite.com' : undefined
   }
 });
 
 app.use(sessionMiddleware);
 
 // ======================
-// INTEGRAÇÃO SOCKET + SESSÃO
+// MIDDLEWARES DO SOCKET.IO (ATUALIZADOS)
 // ======================
 io.use((socket, next) => {
   sessionMiddleware(socket.request, {}, next);
+});
+
+io.use(socketRateLimit({
+  windowMs: 60 * 1000, // 1 minuto
+  max: 5, // Máximo de 5 conexões por IP
+  message: 'Muitas conexões deste IP, tente novamente mais tarde'
+}));
+
+io.use((socket, next) => {
+  if (socket.request.session?.userId) {
+    next();
+  } else {
+    const ip = socket.handshake.address;
+    console.warn(`⛔ Conexão bloqueada de ${ip} (ID: ${socket.id})`);
+    socket.emit('auth_error', { message: 'Requer autenticação' });
+    next(new Error("Não autorizado"));
+  }
 });
 
 // ======================
@@ -237,7 +271,6 @@ app.post('/register', async (req, res) => {
   try {
     const { username, password } = req.body;
     
-    // Validação robusta
     if (!username || !password || password.length < 8) {
       return res.status(400).json({ 
         error: 'Usuário e senha válidos são obrigatórios (mínimo 8 caracteres)' 
@@ -302,17 +335,17 @@ app.post('/logout', (req, res) => {
 });
 
 // ======================
-// HANDLERS DO WEBSOCKET
+// HANDLERS DO WEBSOCKET (ATUALIZADOS)
 // ======================
 io.on('connection', (socket) => {
   const session = socket.request.session;
+  const ip = socket.handshake.address;
   
-  if (!session?.userId) {
-    console.warn('⚠️ Tentativa de conexão não autenticada:', socket.id);
-    return socket.disconnect(true);
-  }
-
-  console.log('🔌 Novo cliente conectado:', socket.id, '| Usuário:', session.userId);
+  console.log('🔌 Nova conexão:', {
+    id: socket.id,
+    user: session.userId,
+    ip: ip
+  });
 
   // Evento para entrar em salas
   socket.on('joinRoom', (room) => {
@@ -322,6 +355,7 @@ io.on('connection', (socket) => {
 
     socket.join(room);
     socket.emit('systemMessage', { text: `Você entrou na sala ${room}` });
+    console.log(`🚪 Usuário ${session.userId} entrou na sala ${room}`);
   });
 
   // Evento para enviar mensagens
@@ -344,6 +378,8 @@ io.on('connection', (socket) => {
         text: message.text,
         timestamp: message.createdAt
       });
+
+      console.log(`✉️ Mensagem enviada por ${session.userId} em ${room}`);
     } catch (err) {
       console.error('Erro ao salvar mensagem:', err);
       socket.emit('error', { message: 'Erro ao enviar mensagem' });
@@ -351,25 +387,37 @@ io.on('connection', (socket) => {
   });
 
   // Evento de desconexão
-  socket.on('disconnect', () => {
-    console.log('🔌 Cliente desconectado:', socket.id);
+  socket.on('disconnect', (reason) => {
+    console.log('🔌 Conexão encerrada:', {
+      id: socket.id,
+      user: session.userId,
+      reason: reason
+    });
   });
 });
 
 // ======================
-// MANUSEIO DE ERROS
+// MANUSEIO DE ERROS (ATUALIZADO)
 // ======================
 app.use((err, req, res, next) => {
-  console.error('❌ Erro não tratado:', err);
+  console.error('❌ Erro não tratado:', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method
+  });
   res.status(500).json({ error: 'Ocorreu um erro interno' });
 });
 
-process.on('unhandledRejection', (reason) => {
-  console.error('❌ Rejeição não tratada:', reason);
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Rejeição não tratada em:', promise, 'Motivo:', reason);
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('❌ Exceção não capturada:', err);
+  console.error('❌ Exceção não capturada:', {
+    error: err.message,
+    stack: err.stack
+  });
   process.exit(1);
 });
 
@@ -380,4 +428,5 @@ server.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
   console.log(`🔗 Acessível em: ${FRONTEND_URL}`);
   console.log(`📁 Servindo arquivos estáticos de: ${path.join(__dirname, 'public')}`);
+  console.log(`⚡ Modo: ${NODE_ENV}`);
 });
