@@ -1,4 +1,4 @@
-krequire('dotenv').config();
+require('dotenv').config();
 
 const express = require('express');
 const mongoose = require('mongoose');
@@ -48,7 +48,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
-app.use(express.static(PUBLIC_DIR, {
+app.use('/public', express.static(PUBLIC_DIR, {
   maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0
 }));
 
@@ -66,20 +66,55 @@ mongoose.connect(MONGODB_URI, {
   process.exit(1);
 });
 
-// Schemas (mantidos iguais)
+// Schemas
 const userSchema = new mongoose.Schema({
-  username: { /* ... */ },
-  password: { /* ... */ },
-  role: { /* ... */ },
-  lastSeen: { /* ... */ }
+  username: { 
+    type: String, 
+    required: true, 
+    unique: true,
+    trim: true,
+    minlength: 3,
+    maxlength: 30
+  },
+  password: { 
+    type: String, 
+    required: true,
+    minlength: 8
+  },
+  role: { 
+    type: String, 
+    enum: ['user', 'admin'], 
+    default: 'user' 
+  },
+  lastSeen: { 
+    type: Date 
+  }
 }, { timestamps: true, autoIndex: true });
 
 const messageSchema = new mongoose.Schema({
-  user: { /* ... */ },
-  text: { /* ... */ },
-  room: { /* ... */ },
-  messageId: { /* ... */ },
-  createdAt: { /* ... */ }
+  user: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  text: { 
+    type: String, 
+    required: true,
+    maxlength: 1000
+  },
+  room: { 
+    type: String, 
+    required: true,
+    index: true
+  },
+  messageId: { 
+    type: String, 
+    default: uuidv4 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  }
 });
 
 messageSchema.index({ room: 1, createdAt: -1 });
@@ -117,21 +152,161 @@ io.use((socket, next) => {
   sessionMiddleware(socket.request, {}, next);
 });
 
-// Middlewares de autenticação e rate limiting (mantidos iguais)
-const authenticate = (req, res, next) => { /* ... */ };
-const rateLimit = (req, res, next) => { /* ... */ };
+// Middlewares de autenticação e rate limiting
+const authenticate = (req, res, next) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'Não autorizado' });
+  }
+  next();
+};
 
-// Rotas (mantidas iguais)
-app.get('/', (req, res) => { /* ... */ });
-app.get('/chat', authenticate, (req, res) => { /* ... */ });
-app.get('/messages', authenticate, async (req, res) => { /* ... */ });
-app.post('/register', rateLimit, async (req, res) => { /* ... */ });
-app.post('/login', rateLimit, async (req, res) => { /* ... */ });
-app.post('/logout', (req, res) => { /* ... */ });
-app.get('/me', authenticate, (req, res) => { /* ... */ });
+const rateLimit = (req, res, next) => {
+  // Implementação básica de rate limiting
+  const now = Date.now();
+  const window = 15 * 60 * 1000; // 15 minutos
+  const maxRequests = 100;
+  
+  if (!req.session.requestCount) {
+    req.session.requestCount = 1;
+    req.session.firstRequestTime = now;
+    return next();
+  }
 
-// WebSocket handlers (mantidos iguais)
-io.on('connection', async (socket) => { /* ... */ });
+  if (now - req.session.firstRequestTime > window) {
+    req.session.requestCount = 1;
+    req.session.firstRequestTime = now;
+    return next();
+  }
+
+  req.session.requestCount++;
+  if (req.session.requestCount > maxRequests) {
+    return res.status(429).json({ error: 'Muitas requisições' });
+  }
+
+  next();
+};
+
+// Rotas
+app.get('/', (req, res) => {
+  res.json({ status: 'online', timestamp: new Date() });
+});
+
+app.get('/chat', authenticate, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'chat.html'));
+});
+
+app.get('/messages', authenticate, async (req, res) => {
+  try {
+    const { room = 'general', limit = 50 } = req.query;
+    const messages = await Message.find({ room })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .populate('user', 'username');
+    res.json(messages.reverse());
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao buscar mensagens' });
+  }
+});
+
+app.post('/register', rateLimit, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = new User({ username, password: hashedPassword });
+    await user.save();
+    req.session.userId = user._id;
+    res.status(201).json({ username: user.username, role: user.role });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({ error: 'Nome de usuário já existe' });
+    }
+    res.status(500).json({ error: 'Erro ao registrar usuário' });
+  }
+});
+
+app.post('/login', rateLimit, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(401).json({ error: 'Credenciais inválidas' });
+    }
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Credenciais inválidas' });
+    }
+    req.session.userId = user._id;
+    res.json({ username: user.username, role: user.role });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao fazer login' });
+  }
+});
+
+app.post('/logout', (req, res) => {
+  req.session.destroy(err => {
+    if (err) {
+      return res.status(500).json({ error: 'Erro ao fazer logout' });
+    }
+    res.clearCookie('corujao.sid');
+    res.json({ message: 'Logout realizado com sucesso' });
+  });
+});
+
+app.get('/me', authenticate, (req, res) => {
+  res.json({ userId: req.session.userId });
+});
+
+// WebSocket handlers
+io.on('connection', async (socket) => {
+  console.log('Novo cliente conectado:', socket.id);
+
+  if (!socket.request.session.userId) {
+    console.log('Conexão não autenticada, desconectando...');
+    return socket.disconnect(true);
+  }
+
+  try {
+    const user = await User.findById(socket.request.session.userId);
+    if (!user) {
+      return socket.disconnect(true);
+    }
+
+    user.lastSeen = new Date();
+    await user.save();
+
+    socket.on('joinRoom', (room) => {
+      socket.join(room);
+      console.log(`${user.username} entrou na sala ${room}`);
+    });
+
+    socket.on('chatMessage', async ({ text, room }) => {
+      try {
+        const message = new Message({
+          user: user._id,
+          text,
+          room
+        });
+        await message.save();
+        
+        const populatedMessage = await Message.populate(message, { path: 'user', select: 'username' });
+        
+        io.to(room).emit('message', populatedMessage);
+      } catch (err) {
+        console.error('Erro ao salvar mensagem:', err);
+      }
+    });
+
+    socket.on('disconnect', async () => {
+      console.log('Cliente desconectado:', socket.id);
+      user.lastSeen = new Date();
+      await user.save();
+    });
+
+  } catch (err) {
+    console.error('Erro na conexão Socket.IO:', err);
+    socket.disconnect(true);
+  }
+});
 
 // Middleware de tratamento de erros melhorado
 app.use((err, req, res, next) => {
