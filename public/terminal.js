@@ -144,7 +144,8 @@ document.addEventListener('DOMContentLoaded', () => {
   async function carregarMensagensChat() {
     if (!logado) return;
     try {
-      const res = await fetch(API_URL + '?sala=' + encodeURIComponent(salaAtual));
+      const res = await fetch(`${API_URL}?sala=${encodeURIComponent(salaAtual)}`);
+      if (!res.ok) throw new Error('Falha na requisição');
       const msgs = await res.json();
       if (JSON.stringify(msgs) !== JSON.stringify(mensagensCache)) {
         limparChatVisual();
@@ -161,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
         mensagensCache = msgs;
       }
     } catch (e) {
+      console.error('Erro ao carregar mensagens:', e);
       appendLine("[Falha ao sincronizar com servidor...]", "terminal-erro");
     }
   }
@@ -172,18 +174,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function enviarMensagemBackend(texto) {
     if (!usuario) return;
-    if (socket && socket.connected) {
-      socket.emit('enviar_mensagem', {
-        nome: usuario,
-        texto,
-        sala: salaAtual
-      });
-    } else {
-      await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome: usuario, texto, sala: salaAtual })
-      });
+    try {
+      if (socket && socket.connected) {
+        socket.emit('enviar_mensagem', {
+          nome: usuario,
+          texto,
+          sala: salaAtual
+        });
+      } else {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nome: usuario, texto, sala: salaAtual })
+        });
+        if (!response.ok) throw new Error('Falha ao enviar mensagem');
+      }
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
+      appendLine("[Erro ao enviar mensagem]", "terminal-erro");
     }
   }
 
@@ -209,10 +217,12 @@ document.addEventListener('DOMContentLoaded', () => {
   async function mostrarRanking() {
     try {
       const res = await fetch(API_RANKING);
+      if (!res.ok) throw new Error('Falha ao carregar ranking');
       const rank = await res.json();
       appendLine("<b>TOP CORUJÕES</b>", "terminal-info");
       rank.forEach((r, i) => appendLine(`${i + 1}. @${r.nick} - ${r.pontos} pontos`, "terminal-info"));
-    } catch {
+    } catch (e) {
+      console.error('Erro ao carregar ranking:', e);
       appendLine("Ranking indisponível.", "terminal-info");
     }
   }
@@ -302,9 +312,13 @@ document.addEventListener('DOMContentLoaded', () => {
         carregarMensagensChat();
       } else if (comando.startsWith('/privado ')) {
         const partes = comando.split(' ');
-        const nick = partes[1];
-        const mensagem = partes.slice(2).join(' ');
-        enviarMensagemPrivada(nick, mensagem);
+        if (partes.length < 3) {
+          appendLine("Uso correto: /privado [nick] [mensagem]", "terminal-erro");
+        } else {
+          const nick = partes[1];
+          const mensagem = partes.slice(2).join(' ');
+          enviarMensagemPrivada(nick, mensagem);
+        }
       } else if (comando === '/ranking') {
         mostrarRanking();
       } else if (comando === '/badge') {
