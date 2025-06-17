@@ -11,22 +11,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Manifesto & Mural
   const manifesto = [
-    "███████████████████████████████████████████████████████████████",
-    "█                                                           █",
-    "█                 CORUJÃO SERVER - MANIFESTO                █",
-    "█                                                           █",
-    "█  Liberdade digital pra todos. Aqui ninguém é obrigado.    █",
-    "█  Respeito acima de tudo. Sem patrão, sem abuso, sem medo. █",
-    "█  Você cria sua própria história, sua conta, seu caminho.  █",
-    "█  Tudo é livre, tudo é colaborativo.                       █",
-    "█                                                           █",
-    "█  Quem entra aqui aceita construir junto, com ética        █",
-    "█  e responsabilidade.                                      █",
-    "█                                                           █",
-    "█  Bem-vindo à madrugada dos livres!                        █",
-    "█                                                           █",
-    "███████████████████████████████████████████████████████████████",
-    ""
+    "CORUJAO SERVER - MANIFESTO",
+    "",
+    "Liberdade digital pra todos. Aqui ninguem e obrigado.",
+    "Respeito acima de tudo. Sem patrao, sem abuso, sem medo.",
+    "Voce cria sua propria historia, sua conta, seu caminho.",
+    "Tudo e livre, tudo e colaborativo.",
+    "",
+    "Quem entra aqui aceita construir junto, com etica",
+    "e responsabilidade.",
+    "",
+    "Bem-vindo a madrugada dos livres!"
   ];
 
   const mural = [
@@ -111,7 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ----------- SOCKET.IO INTEGRATION -------------
   function iniciarSocketIO() {
     socket = io('https://corujao-rank-1.onrender.com', {
       reconnectionAttempts: 5,
@@ -130,16 +124,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('nova_mensagem', (msg) => {
       if ((msg.sala || "geral") !== salaAtual) return;
-      
+
       const hora = msg.hora || "--:--";
       const nome = msg.nome || "anon";
       const texto = destacarMencoes(msg.texto || "");
-      
+
       appendLine(
         `<span class="hora">${hora}</span> <span class="nick${nome === usuario ? ' self' : ''}">@${nome}</span>: ${texto}`,
         nome === usuario ? "msg-voce" : "msg-corujao"
       );
-      
+
       mensagensCache.push(msg);
     });
 
@@ -160,7 +154,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ----------- CHAT INTEGRADO -------------
   async function carregarMensagensChat() {
     if (!logado) return;
     try {
@@ -192,7 +185,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function enviarMensagemBackend(texto) {
     if (!usuario) return;
-    
     if (socket && socket.connected) {
       socket.emit('enviar_mensagem', {
         nome: usuario,
@@ -208,7 +200,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ----------- PRIVADO -------------
   function receberMensagemPrivada(de, msg) {
     if (!mensagensPrivadas[de]) mensagensPrivadas[de] = [];
     mensagensPrivadas[de].push(msg);
@@ -219,7 +210,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!mensagensPrivadas[para]) mensagensPrivadas[para] = [];
     mensagensPrivadas[para].push(msg);
     appendLine(`<span class="msg-privado">[PRIVADO para @${para}]: ${msg}</span>`, "msg-privado");
-    
     if (socket && socket.connected) {
       socket.emit('mensagem_privada', {
         de: usuario,
@@ -229,7 +219,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ----------- RANKING -------------
   async function mostrarRanking() {
     try {
       const res = await fetch(API_RANKING);
@@ -241,7 +230,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ----------- BADGES -------------
   function mostrarBadge(nick) {
     if (!nick) nick = usuario;
     const badges = {
@@ -252,17 +240,14 @@ document.addEventListener('DOMContentLoaded', () => {
     appendLine(`Badge de @${nick}: ${badges[nick] || 'Coruja'} `, "terminal-info");
   }
 
-  // ----------- CURIOSIDADES -------------
   function mostrarCuriosidade() {
     const idx = Math.floor(Math.random() * curiosidades.length);
     appendLine(`<b>Curiosidade do Dia:</b> ${curiosidades[idx]}`, "terminal-info");
   }
 
-  // ----------- FLUXO PRINCIPAL -------------
   function iniciar() {
     if (polling) clearInterval(polling);
     if (socket) socket.disconnect();
-    
     term.innerHTML = '';
     salaAtual = "geral";
     manifesto.forEach(linha => appendLine(linha, "terminal-info"));
@@ -286,9 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
     appendLine(`Bem-vindo(a), ${usuario}! Agora é sua vez de deixar história aqui no Corujão Server.`);
     appendLine("Digite /ajuda para comandos ou comece a criar.");
     logado = true;
-    
     iniciarSocketIO();
-    
     setTimeout(() => {
       carregarMensagensChat();
       polling = setInterval(carregarMensagensChat, 2000);
@@ -308,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
       Corujão é liberdade digital de verdade.<br>
       <i>Sinta-se em casa, a sala é sua!</i>
     </span>`, "terminal-info");
-    
+
     if (socket && socket.connected) {
       socket.emit('trocar_sala', {
         usuario,
@@ -320,13 +303,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function processaComando(txt) {
     const comando = txt.trim();
-
     if (comando === '') {
       promptComando();
       return;
     }
-
-    // COMANDOS AVANÇADOS
     if (comando.startsWith('/')) {
       if (comando.startsWith('/sala ')) {
         const novaSala = comando.split(' ')[1];
@@ -356,12 +336,10 @@ document.addEventListener('DOMContentLoaded', () => {
         appendLine(`Comando desconhecido: ${comando}`, "terminal-erro");
       }
     } else {
-      // Mensagem normal
       enviarMensagemBackend(comando);
     }
     promptComando();
   }
 
-  // Inicia o terminal
   iniciar();
 });

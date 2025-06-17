@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Corujão Terminal</title>
-  <link href="https://fonts.googleapis.com/css2?family=Electrolize&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Electrolize&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="/css/style.css"/>
 </head>
 <body>
   <div id="layout">
@@ -42,7 +42,7 @@
           <form id="prompt-row" autocomplete="off">
             <span id="terminal-nick">visitante</span>
             <span id="prompt-colon">:</span>
-            <input type="text" id="msg" placeholder="Digite sua mensagem..." maxlength="300" autofocus>
+            <input type="text" id="msg" placeholder="Digite sua mensagem..." maxlength="300" autofocus />
           </form>
         </div>
       </div>
@@ -75,6 +75,9 @@
 
   <!-- Scripts -->
   <script nonce="CORUJAO_NONCE">
+    // Inicializa Socket.IO
+    const socket = io();
+
     // Funções essenciais do original
     function nomeSpan(nome) {
       const currentUser = document.getElementById('terminal-nick').textContent;
@@ -88,12 +91,17 @@
       return texto.replace(/@([a-zA-Z0-9_]+)/g, (match, nome) => nomeSpan(nome));
     }
 
+    // Variável para guardar sala atual (default 'geral')
+    let salaAtual = 'geral';
+
     function jogarProCentro(nome, tipo) {
       const chat = document.getElementById('chat-list');
       const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
       let li = document.createElement('li');
       
       if (tipo === 'sala') {
+        salaAtual = nome;  // atualiza a sala atual no front
+        socket.emit('joinRoom', nome);
         li.className = "msg-evento";
         li.innerHTML = `[${hora}] Você entrou na sala <span class="nick">#${nome}</span>`;
       } else {
@@ -132,25 +140,40 @@
       });
     }
 
-    // Inicialização
+    // Enviar mensagem via socket e mostrar localmente
     document.getElementById('prompt-row').onsubmit = function(e) {
       e.preventDefault();
       let msg = document.getElementById('msg').value.trim();
       if(msg) {
-        msg = destacarMencoes(msg);
+        socket.emit('sendMessage', { room: salaAtual, text: msg });
+
         const chat = document.getElementById('chat-list');
         const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
         const nome = document.getElementById('terminal-nick').textContent;
         
         const li = document.createElement('li');
         li.className = "msg-voce";
-        li.innerHTML = `[${hora}] ${nomeSpan(nome)}: ${msg}`;
+        li.innerHTML = `[${hora}] ${nomeSpan(nome)}: ${destacarMencoes(msg)}`;
         chat.appendChild(li);
         chat.scrollTop = chat.scrollHeight;
         document.getElementById('msg').value = "";
       }
     };
 
+    // Receber mensagens do servidor via socket
+    socket.on('message', ({ user, text }) => {
+      const chat = document.getElementById('chat-list');
+      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
+      let username = user || 'Sistema'; // fallback para sistema
+
+      const li = document.createElement('li');
+      li.className = "msg-externa";
+      li.innerHTML = `[${hora}] <span class="nick">@${username}</span>: ${destacarMencoes(text)}`;
+      chat.appendChild(li);
+      chat.scrollTop = chat.scrollHeight;
+    });
+
+    // Inicialização do layout
     document.getElementById('msg').focus();
   </script>
 
