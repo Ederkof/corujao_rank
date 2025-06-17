@@ -48,7 +48,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
-app.use('/public', express.static(PUBLIC_DIR, {
+app.use(express.static(PUBLIC_DIR, {
   maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0
 }));
 
@@ -188,7 +188,7 @@ const rateLimit = (req, res, next) => {
 
 // Rotas
 app.get('/', (req, res) => {
-  res.json({ status: 'online', timestamp: new Date() });
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/chat', authenticate, (req, res) => {
