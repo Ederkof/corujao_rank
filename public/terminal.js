@@ -5,11 +5,9 @@ document.addEventListener('DOMContentLoaded', () => {
   term.tabIndex = 0;
   container.appendChild(term);
 
-  // URL do backend
   const API_URL = 'https://corujao-rank-1.onrender.com/api/mensagens';
   const API_RANKING = 'https://corujao-rank-1.onrender.com/api/ranking';
 
-  // Manifesto & Mural
   const manifesto = [
     "CORUJAO SERVER - MANIFESTO",
     "",
@@ -24,15 +22,6 @@ document.addEventListener('DOMContentLoaded', () => {
     "Bem-vindo a madrugada dos livres!"
   ];
 
-  const mural = [
-    "Aviso do Corujão:",
-    "- Respeite todo mundo!",
-    "- Liberdade digital é nosso lema.",
-    "- O que você criar aqui é seu e de todos.",
-    "- Denuncie abusos ou problemas com /admin."
-  ];
-
-  // Curiosidades
   const curiosidades = [
     "Você sabia? O Corujão Server nasceu de um sonho de liberdade digital para todos.",
     "Curiosidade: O animal coruja simboliza sabedoria, visão noturna e liberdade de pensamento.",
@@ -51,7 +40,6 @@ document.addEventListener('DOMContentLoaded', () => {
     "As mulheres têm papel fundamental na tecnologia. Incentive e convide todas para o Corujão!"
   ];
 
-  // Estado do terminal
   let usuario = "", senha = "";
   let logado = false;
   let salaAtual = "geral";
@@ -60,7 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let mensagensPrivadas = {};
   let socket = null;
 
-  // Funções utilitárias
   function appendLine(txt, className = "") {
     const line = document.createElement('div');
     if (className) line.className = className;
@@ -224,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch(API_RANKING);
       const rank = await res.json();
       appendLine("<b>TOP CORUJÕES</b>", "terminal-info");
-      rank.forEach((r, i) => appendLine(`${i+1}. @${r.nick} - ${r.pontos} pontos`, "terminal-info"));
+      rank.forEach((r, i) => appendLine(`${i + 1}. @${r.nick} - ${r.pontos} pontos`, "terminal-info"));
     } catch {
       appendLine("Ranking indisponível.", "terminal-info");
     }
@@ -237,7 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
       'admin': 'Moderador',
       'anon': 'Invisível'
     };
-    appendLine(`Badge de @${nick}: ${badges[nick] || 'Coruja'} `, "terminal-info");
+    appendLine(`Badge de @${nick}: ${badges[nick] || 'Coruja'}`, "terminal-info");
   }
 
   function mostrarCuriosidade() {
@@ -256,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function nomeCriado(nome) {
     usuario = nome.trim();
-    if(usuario.length < 2) {
+    if (usuario.length < 2) {
       appendLine("Nome muito curto. Tente novamente.", "terminal-info");
       appendInput('Crie seu nome, sua história: ', nomeCriado);
     } else {
@@ -342,4 +329,4 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   iniciar();
-}); // <-- Fechamento final adicionado aqui
+});
