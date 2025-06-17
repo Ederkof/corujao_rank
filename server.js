@@ -10,7 +10,6 @@ const socketIO = require('socket.io');
 const http = require('http');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -20,13 +19,6 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const PORT = process.env.PORT || 4040;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/corujao_chat';
 const SESSION_SECRET = process.env.SESSION_SECRET || uuidv4();
-
-// Verificação/Criação da pasta views (ajustado para seu caso)
-const VIEWS_DIR = path.join(__dirname, 'views');
-if (!fs.existsSync(VIEWS_DIR)) {
-  fs.mkdirSync(VIEWS_DIR, { recursive: true });
-  console.log(`✅ Pasta views criada em: ${VIEWS_DIR}`);
-}
 
 // Configuração do Socket.IO
 const io = socketIO(server, {
@@ -45,12 +37,12 @@ app.use(cors({
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-// Ajuste crítico: Serve arquivos estáticos da pasta views (onde está seu index.html)
-app.use(express.static(VIEWS_DIR, {
+// Serve arquivos estáticos da pasta public (HTML, CSS, JS)
+app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0
 }));
 
-// Conexão com MongoDB (mantido igual)
+// Conexão com MongoDB
 mongoose.connect(MONGODB_URI, {
   dbName: 'corujao_chat',
   connectTimeoutMS: 30000
@@ -58,7 +50,7 @@ mongoose.connect(MONGODB_URI, {
 .then(() => console.log('✅ MongoDB conectado com sucesso'))
 .catch(err => console.error('❌ Erro ao conectar ao MongoDB:', err));
 
-// Schemas e Models (mantidos iguais)
+// Schemas e Models
 const User = mongoose.model('User', new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -71,7 +63,7 @@ const Message = mongoose.model('Message', new mongoose.Schema({
   room: { type: String, required: true }
 }));
 
-// Configuração de sessão (mantido igual)
+// Configuração de sessão
 app.use(session({
   secret: SESSION_SECRET,
   store: MongoStore.create({ mongoUrl: MONGODB_URI }),
@@ -80,32 +72,62 @@ app.use(session({
   cookie: { secure: process.env.NODE_ENV === 'production' }
 }));
 
-// Middleware para Socket.IO (mantido igual)
+// Middleware para Socket.IO
 io.use((socket, next) => {
   session(socket.request, {}, next);
 });
 
-// Rotas principais ajustadas para /views
+// Rotas principais
 app.get('/', (req, res) => {
-  res.sendFile(path.join(VIEWS_DIR, 'index.html')); // Caminho corrigido
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/chat', (req, res) => {
-  res.sendFile(path.join(VIEWS_DIR, 'chat.html')); // Caminho corrigido
+  res.sendFile(path.join(__dirname, 'public', 'chat.html'));
 });
 
-// Demais rotas (mantidas iguais)
+// Rotas de autenticação
 app.post('/register', async (req, res) => {
-  /* ... código original ... */
+  try {
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+    const user = new User({
+      username: req.body.username,
+      password: hashedPassword
+    });
+    await user.save();
+    res.status(201).send('Usuário criado com sucesso');
+  } catch (error) {
+    res.status(500).send('Erro ao registrar usuário');
+  }
 });
 
 app.post('/login', async (req, res) => {
-  /* ... código original ... */
+  const user = await User.findOne({ username: req.body.username });
+  if (!user) return res.status(400).send('Usuário não encontrado');
+
+  const validPassword = await bcrypt.compare(req.body.password, user.password);
+  if (!validPassword) return res.status(400).send('Senha incorreta');
+
+  req.session.userId = user._id;
+  res.send('Login bem-sucedido');
 });
 
-// WebSocket handlers (mantido igual)
+// WebSocket handlers
 io.on('connection', (socket) => {
-  /* ... código original ... */
+  console.log('Novo usuário conectado:', socket.id);
+
+  socket.on('joinRoom', (room) => {
+    socket.join(room);
+    socket.emit('message', { user: 'Sistema', text: `Você entrou na sala ${room}` });
+  });
+
+  socket.on('sendMessage', ({ room, text }) => {
+    io.to(room).emit('message', { user: socket.request.session.userId, text });
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Usuário desconectado:', socket.id);
+  });
 });
 
 // Inicialização do servidor

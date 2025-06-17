@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Corujão Terminal</title>
+  <link href="https://fonts.googleapis.com/css2?family=Electrolize&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="layout">
+    <!-- Sidebar Esquerda - Amigos e Salas -->
+    <div id="sidebar-esq">
+      <div class="sidebar-titulo">Amigos Online</div>
+      <ul id="lista-amigos">
+        <li onclick="jogarProCentro('lucas')">lucas</li>
+        <li onclick="jogarProCentro('ana')">ana</li>
+        <li onclick="jogarProCentro('dudu')">dudu</li>
+      </ul>
+      
+      <div class="sidebar-titulo">Salas Ativas</div>
+      <ul id="lista-salas">
+        <li onclick="jogarProCentro('geral', 'sala')">geral</li>
+        <li onclick="jogarProCentro('kof', 'sala')">kof</li>
+        <li onclick="jogarProCentro('memes', 'sala')">memes</li>
+      </ul>
+    </div>
+
+    <!-- Área Central - Chat -->
+    <div id="main">
+      <div id="chat-central">
+        <div id="terminal-header">
+          🦉 Corujão Terminal v3.0 | Seja bem-vindo!
+        </div>
+        
+        <ul id="chat-list">
+          <li class="msg-evento">[21:04] <span class="event-torneio">Torneio 23h</span> – veja detalhes ou participe!</li>
+          <li class="msg-evento">[21:04] <span class="event-desafio">Desafio do Dia</span> – veja detalhes ou participe!</li>
+        </ul>
+        
+        <div id="terminal-bar">
+          <form id="prompt-row" autocomplete="off">
+            <span id="terminal-nick">visitante</span>
+            <span id="prompt-colon">:</span>
+            <input type="text" id="msg" placeholder="Digite sua mensagem..." maxlength="300" autofocus>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar Direita - Eventos -->
+    <div id="sidebar-dir">
+      <div class="sidebar-titulo">Eventos Ativos</div>
+      <ul>
+        <li onclick="eventoPainel('Torneio Noturno', 'event-torneio')">Torneio Noturno</li>
+        <li onclick="eventoPainel('Desafio Diário', 'event-desafio')">Desafio Diário</li>
+        <li onclick="eventoPainel('Quiz KOF', 'event-quiz')">Quiz KOF</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Rodapé Fixo -->
+  <div id="footer">
+    <span class="cmd" onclick="comandoRapido('/ajuda')">/ajuda</span>
+    <span class="cmd" onclick="comandoRapido('/amigos')">/amigos</span>
+    <span class="cmd" onclick="comandoRapido('/salas')">/salas</span>
+    <span class="cmd" onclick="comandoRapido('/ranking')">/ranking</span>
+    <span class="cmd" onclick="comandoRapido('/limpar')">/limpar</span>
+    
+    <div id="footer-theme-switch">
+      <div class="theme-dot dark selected" title="Tema escuro" onclick="mudarTema('escuro')"></div>
+      <div class="theme-dot light" title="Tema claro" onclick="mudarTema('claro')"></div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script nonce="CORUJAO_NONCE">
+    // Funções essenciais do original
+    function nomeSpan(nome) {
+      const currentUser = document.getElementById('terminal-nick').textContent;
+      if (nome.toLowerCase() === currentUser.toLowerCase()) {
+        return `<span class="nick self">@${nome}</span>`;
+      }
+      return `<span class="nick">@${nome}</span>`;
+    }
+
+    function destacarMencoes(texto) {
+      return texto.replace(/@([a-zA-Z0-9_]+)/g, (match, nome) => nomeSpan(nome));
+    }
+
+    function jogarProCentro(nome, tipo) {
+      const chat = document.getElementById('chat-list');
+      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
+      let li = document.createElement('li');
+      
+      if (tipo === 'sala') {
+        li.className = "msg-evento";
+        li.innerHTML = `[${hora}] Você entrou na sala <span class="nick">#${nome}</span>`;
+      } else {
+        li.className = "msg-voce";
+        li.innerHTML = `[${hora}] Você iniciou conversa com ${nomeSpan(nome)}`;
+      }
+      
+      chat.appendChild(li);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function eventoPainel(texto, classe) {
+      const chat = document.getElementById('chat-list');
+      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
+      let li = document.createElement('li');
+      li.className = "msg-evento";
+      li.innerHTML = `[${hora}] <span class="${classe}">${texto}</span> – veja detalhes ou participe!`;
+      chat.appendChild(li);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // Funções do novo layout
+    function comandoRapido(cmd) {
+      const input = document.getElementById('msg');
+      input.value = cmd;
+      input.focus();
+    }
+
+    function mudarTema(tema) {
+      document.documentElement.classList.toggle('claro', tema === 'claro');
+      document.querySelectorAll('.theme-dot').forEach(dot => {
+        dot.classList.toggle('selected', 
+          (tema === 'escuro' && dot.classList.contains('dark')) || 
+          (tema === 'claro' && dot.classList.contains('light'))
+        );
+      });
+    }
+
+    // Inicialização
+    document.getElementById('prompt-row').onsubmit = function(e) {
+      e.preventDefault();
+      let msg = document.getElementById('msg').value.trim();
+      if(msg) {
+        msg = destacarMencoes(msg);
+        const chat = document.getElementById('chat-list');
+        const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
+        const nome = document.getElementById('terminal-nick').textContent;
+        
+        const li = document.createElement('li');
+        li.className = "msg-voce";
+        li.innerHTML = `[${hora}] ${nomeSpan(nome)}: ${msg}`;
+        chat.appendChild(li);
+        chat.scrollTop = chat.scrollHeight;
+        document.getElementById('msg').value = "";
+      }
+    };
+
+    document.getElementById('msg').focus();
+  </script>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/terminal.js"></script>
+  <script src="/js/main.js"></script>
+</body>
+</html>
