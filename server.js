@@ -12,7 +12,7 @@ const http = require('http');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
-const { rateLimiter } = require('socket.io-ratelimiter'); // Correção aplicada
+const { RateLimiterMemory } = require('rate-limiter-flexible'); // Nova dependência para rate limiting
 
 // Inicialização do app
 const app = express();
@@ -26,6 +26,12 @@ const PORT = process.env.PORT || 4040;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/corujao_chat';
 const SESSION_SECRET = process.env.SESSION_SECRET || uuidv4();
 const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// Configuração do Rate Limiter
+const rateLimiter = new RateLimiterMemory({
+  points: 5, // 5 pontos
+  duration: 60, // Por 60 segundos
+});
 
 // Verificação de variáveis de ambiente essenciais
 if (!process.env.MONGODB_URI) {
@@ -225,18 +231,28 @@ io.use((socket, next) => {
   sessionMiddleware(socket.request, {}, next);
 });
 
-// Configuração do rate limiter corrigida
-io.use(rateLimiter({
-  windowMs: 60 * 1000, // 1 minuto
-  max: 5, // Máximo de 5 eventos por conexão
-  onExceeded: (socket, error) => {
+// Middleware de rate limiting para Socket.IO
+io.use(async (socket, next) => {
+  try {
+    const ip = socket.handshake.address;
+    const rateLimitRes = await rateLimiter.consume(ip);
+    
+    socket.rateLimit = {
+      remaining: rateLimitRes.remainingPoints,
+      reset: Math.floor(Date.now() / 1000) + rateLimitRes.msBeforeNext / 1000
+    };
+    
+    next();
+  } catch (rateLimitRes) {
     const ip = socket.handshake.address;
     console.warn(`⏱️ Rate limit excedido para ${ip}`);
     socket.emit('rate_limit_exceeded', { 
-      message: 'Muitas requisições! Espere um pouco.' 
+      message: 'Muitas requisições! Espere um pouco.',
+      retryAfter: Math.ceil(rateLimitRes.msBeforeNext / 1000)
     });
+    next(new Error('Rate limit excedido'));
   }
-}));
+});
 
 io.use((socket, next) => {
   if (socket.request.session?.userId) {
