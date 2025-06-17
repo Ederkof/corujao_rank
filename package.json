@@ -28,3 +28,8 @@
     "predeploy": "npm install"
   }
 }
+
+"scripts": {
+  "start": "node server.js",
+  "build": "echo 'Build completo! (Nenhuma ação necessária)'"
+}
