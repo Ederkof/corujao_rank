@@ -24,7 +24,7 @@ const io = socketIO(server, {
     credentials: true
   },
   connectionStateRecovery: {
-    maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutos
+    maxDisconnectionDuration: 2 * 60 * 1000,
     skipMiddlewares: true
   }
 });
@@ -80,14 +80,6 @@ const userSchema = new mongoose.Schema({
   lastSeen: {
     type: Date,
     default: Date.now
-  },
-  email: {
-    type: String,
-    unique: true,
-    sparse: true,
-    trim: true,
-    lowercase: true,
-    match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   }
 }, {
   timestamps: true,
@@ -136,7 +128,7 @@ const sessionMiddleware = session({
     mongoUrl: MONGODB_URI,
     dbName: 'corujao_chat',
     collectionName: 'sessions',
-    ttl: 24 * 60 * 60, // 1 dia em segundos
+    ttl: 24 * 60 * 60,
     autoRemove: 'native'
   }),
   resave: false,
@@ -146,7 +138,7 @@ const sessionMiddleware = session({
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    maxAge: 24 * 60 * 60 * 1000 // 1 dia
+    maxAge: 24 * 60 * 60 * 1000
   }
 });
 
@@ -176,62 +168,61 @@ app.get('/chat', authenticate, (req, res) => {
 
 app.post('/register', async (req, res) => {
   try {
-    const { username, password, email } = req.body;
+    const { username, password } = req.body;
     
-    // Validação básica
     if (!username || !password) {
-      return res.status(400).json({ error: 'Username e senha são obrigatórios' });
+      return res.status(400).json({ 
+        error: 'Username e senha são obrigatórios',
+        code: 'MISSING_FIELDS'
+      });
     }
 
-    // Verificação case-insensitive
-    const userExists = await User.findOne({ username })
-      .collation({ locale: 'en', strength: 2 })
-      .lean();
+    // Verificação case-insensitive robusta
+    const existingUser = await User.findOne({ 
+      username: { $regex: new RegExp(`^${username}$`, 'i') } 
+    });
 
-    if (userExists) {
-      return res.status(409).json({ error: 'Nome de usuário já está em uso' });
-    }
-
-    // Verificação de e-mail se fornecido
-    if (email) {
-      const emailExists = await User.findOne({ email }).lean();
-      if (emailExists) {
-        return res.status(409).json({ error: 'E-mail já está em uso' });
-      }
+    if (existingUser) {
+      return res.status(409).json({ 
+        error: 'Nome de usuário já está em uso',
+        code: 'USERNAME_EXISTS'
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
     const newUser = await User.create({
       username,
-      password: hashedPassword,
-      email: email || undefined
+      password: hashedPassword
     });
 
-    // Não retornar a senha
-    const userResponse = {
-      id: newUser._id,
-      username: newUser.username,
-      role: newUser.role,
-      createdAt: newUser.createdAt
-    };
+    // Configurar sessão automaticamente após registro
+    req.session.userId = newUser._id;
+    req.session.username = newUser.username;
+    req.session.role = newUser.role;
 
     res.status(201).json({
-      message: 'Usuário registrado com sucesso',
-      user: userResponse
+      success: true,
+      user: {
+        id: newUser._id,
+        username: newUser.username,
+        role: newUser.role
+      }
     });
 
   } catch (error) {
     console.error('Erro no registro:', error);
     
-    // Tratamento de erros do MongoDB
     if (error.code === 11000) {
-      const field = Object.keys(error.keyPattern)[0];
       return res.status(409).json({ 
-        error: `${field === 'username' ? 'Nome de usuário' : 'E-mail'} já está em uso` 
+        error: 'Nome de usuário já está em uso',
+        code: 'DUPLICATE_USERNAME'
       });
     }
     
-    res.status(500).json({ error: 'Erro interno no servidor' });
+    res.status(500).json({ 
+      error: 'Erro ao criar conta',
+      code: 'REGISTRATION_ERROR'
+    });
   }
 });
 
@@ -240,38 +231,44 @@ app.post('/login', async (req, res) => {
     const { username, password } = req.body;
     
     if (!username || !password) {
-      return res.status(400).json({ error: 'Username e senha são obrigatórios' });
+      return res.status(400).json({ 
+        error: 'Username e senha são obrigatórios',
+        code: 'MISSING_CREDENTIALS'
+      });
     }
 
-    const user = await User.findOne({ username })
-      .collation({ locale: 'en', strength: 2 })
-      .select('+password')
-      .lean();
+    // Busca case-insensitive
+    const user = await User.findOne({ 
+      username: { $regex: new RegExp(`^${username}$`, 'i') } 
+    }).select('+password');
 
     if (!user) {
-      console.log(`Tentativa de login falhou: usuário "${username}" não encontrado`);
-      return res.status(401).json({ error: 'Credenciais inválidas' });
+      console.log(`Usuário não encontrado: ${username}`);
+      return res.status(401).json({ 
+        error: 'Credenciais inválidas',
+        code: 'USER_NOT_FOUND'
+      });
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    if (!passwordMatch) {
-      console.log(`Tentativa de login falhou: senha incorreta para o usuário "${username}"`);
-      return res.status(401).json({ error: 'Credenciais inválidas' });
+    const passwordValid = await bcrypt.compare(password, user.password);
+    if (!passwordValid) {
+      console.log(`Senha inválida para usuário: ${username}`);
+      return res.status(401).json({ 
+        error: 'Credenciais inválidas',
+        code: 'INVALID_PASSWORD'
+      });
     }
 
-    // Atualizar lastSeen
-    await User.updateOne({ _id: user._id }, { $set: { lastSeen: new Date() } });
+    // Atualizar lastSeen e configurar sessão
+    user.lastSeen = new Date();
+    await user.save();
 
-    // Configurar sessão
     req.session.userId = user._id;
     req.session.username = user.username;
     req.session.role = user.role;
-    
-    // Não retornar a senha
-    delete user.password;
 
     res.json({
-      message: 'Login realizado com sucesso',
+      success: true,
       user: {
         id: user._id,
         username: user.username,
@@ -282,7 +279,10 @@ app.post('/login', async (req, res) => {
 
   } catch (error) {
     console.error('Erro no login:', error);
-    res.status(500).json({ error: 'Erro interno no servidor' });
+    res.status(500).json({ 
+      error: 'Erro durante o login',
+      code: 'LOGIN_ERROR'
+    });
   }
 });
 
@@ -290,11 +290,17 @@ app.post('/logout', (req, res) => {
   req.session.destroy(err => {
     if (err) {
       console.error('Erro ao fazer logout:', err);
-      return res.status(500).json({ error: 'Erro ao fazer logout' });
+      return res.status(500).json({ 
+        error: 'Erro ao fazer logout',
+        code: 'LOGOUT_ERROR'
+      });
     }
     
     res.clearCookie('corujao.sid');
-    res.json({ message: 'Logout realizado com sucesso' });
+    res.json({ 
+      success: true,
+      message: 'Logout realizado com sucesso' 
+    });
   });
 });
 
@@ -321,7 +327,7 @@ io.on('connection', async (socket) => {
   const username = session.username;
   console.log(`🟢 ${username} conectado (ID: ${socket.id})`);
 
-  // Atualizar lastSeen ao conectar
+  // Atualizar status para online
   try {
     await User.updateOne(
       { _id: session.userId },
@@ -396,7 +402,10 @@ io.on('connection', async (socket) => {
 // Middleware de tratamento de erros
 app.use((err, req, res, next) => {
   console.error('Erro não tratado:', err);
-  res.status(500).json({ error: 'Erro interno no servidor' });
+  res.status(500).json({ 
+    error: 'Erro interno no servidor',
+    code: 'INTERNAL_SERVER_ERROR'
+  });
 });
 
 // Inicialização do servidor
