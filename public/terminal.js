@@ -342,4 +342,4 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   iniciar();
-});
+}); // <-- Fechamento final adicionado aqui
