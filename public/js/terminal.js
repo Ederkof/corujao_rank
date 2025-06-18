@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     term.innerHTML = '';
     appendLine("Bem-vindo ao Corujão Chat!", "terminal-info");
     appendLine("Digite /ajuda para ver os comandos disponíveis", "terminal-info");
-    
+
     iniciarSocketIO();
     carregarMensagensIniciais();
     promptComando();
@@ -152,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('new_message', (msg) => {
       if (msg.room !== salaAtual) return;
-      
+
       appendLine(
         `<span class="hora">${new Date(msg.createdAt).toLocaleTimeString()}</span> ` +
         `<span class="nick${msg.user.username === usuario ? ' self' : ''}">@${msg.user.username}</span>: ` +
@@ -170,7 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const response = await fetch(`${API_URL}?room=${salaAtual}`);
       const messages = await response.json();
-      
+
       messages.forEach(msg => {
         appendLine(
           `<span class="hora">${new Date(msg.createdAt).toLocaleTimeString()}</span> ` +
@@ -218,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (comando.startsWith('/')) {
       const [cmd, ...args] = comando.slice(1).split(' ');
-      
+
       switch(cmd) {
         case 'sala':
           if (args.length) {
@@ -228,22 +228,22 @@ document.addEventListener('DOMContentLoaded', () => {
             carregarMensagensIniciais();
           }
           break;
-          
+
         case 'ranking':
           mostrarRanking();
           break;
-          
+
         case 'ajuda':
           mostrarAjuda();
           break;
-          
+
         default:
           appendLine(`Comando desconhecido: /${cmd}`, "terminal-erro");
       }
     } else {
       enviarMensagem(comando);
     }
-    
+
     promptComando();
   }
 
@@ -280,25 +280,6 @@ document.addEventListener('DOMContentLoaded', () => {
         authModal.style.display = 'flex';
       });
   }
-// Corrige o handleLogin não definido
-window.handleLogin = async function() {
-  const username = document.getElementById('login-username').value.trim();
-  const password = document.getElementById('login-password').value;
-  
-  try {
-    const response = await fetch('https://corujao-rank-production.up.railway.app/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    });
-    
-    if (response.ok) {
-      document.getElementById('auth-modal').style.display = 'none';
-      location.reload(); // Recarrega a página após login
-    }
-  } catch (error) {
-    console.error("Erro no login:", error);
-  }
-};
+
   iniciar();
 });
