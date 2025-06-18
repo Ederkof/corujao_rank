@@ -1,53 +1,31 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const container = document.getElementById('terminal-corujano');
+  const container = document.getElementById('terminal-corujao');
   const term = document.createElement('div');
   term.className = 'terminal-area';
   term.tabIndex = 0;
   container.appendChild(term);
 
-  const API_URL = 'https://corujao-rank-1.onrender.com/api/mensagens';
-  const API_RANKING = 'https://corujao-rank-1.onrender.com/api/ranking';
+  // URLs da API - atualize conforme necessário
+  const API_URL = 'https://corujao-rank-production.up.railway.app/api/chat';
+  const API_AUTH = 'https://corujao-rank-production.up.railway.app/api/auth';
+  const SOCKET_URL = 'https://corujao-rank-production.up.railway.app';
 
-  const manifesto = [
-    "CORUJAO SERVER - MANIFESTO",
-    "",
-    "Liberdade digital pra todos. Aqui ninguem e obrigado.",
-    "Respeito acima de tudo. Sem patrao, sem abuso, sem medo.",
-    "Voce cria sua propria historia, sua conta, seu caminho.",
-    "Tudo e livre, tudo e colaborativo.",
-    "",
-    "Quem entra aqui aceita construir junto, com etica",
-    "e responsabilidade.",
-    "",
-    "Bem-vindo a madrugada dos livres!"
-  ];
+  // Elementos do modal de login
+  const authModal = document.getElementById('auth-modal');
+  const loginForm = document.getElementById('login-form');
+  const registerForm = document.getElementById('register-form');
+  const usernameInput = document.getElementById('username');
+  const passwordInput = document.getElementById('password');
+  const authSwitch = document.getElementById('auth-switch');
 
-  const curiosidades = [
-    "Você sabia? O Corujão Server nasceu de um sonho de liberdade digital para todos.",
-    "Curiosidade: O animal coruja simboliza sabedoria, visão noturna e liberdade de pensamento.",
-    "A internet foi inventada para conectar pessoas. O Corujão existe para aproximar ainda mais!",
-    "Você pode criar quantas salas quiser. Corujão é espaço livre, sem limites.",
-    "O maior grupo de corujas é chamado de 'parlamento'. Agora você também faz parte!",
-    "A cada nova sala criada aqui, nasce um espaço único de convivência, criatividade e amizade.",
-    "A palavra 'hacker' já significou 'explorador curioso'. Seja um coruja-hacker do bem!",
-    "Curiosidade musical: Muitas igrejas usam corais noturnos porque a noite inspira reflexão.",
-    "A curiosidade é o motor da inteligência. Volte amanhã para mais uma curiosidade!",
-    "Seja sempre livre para aprender, errar, tentar de novo e ensinar alguém. Isso é Corujão.",
-    "Você sabia? O emoji de coruja foi lançado oficialmente em 2015.",
-    "No Japão, corujas são símbolo de proteção e boa sorte.",
-    "A maior coruja do mundo é a Bubo bubo, que pode ter até 1,80m de envergadura.",
-    "Toda vez que você faz uma pergunta, uma coruja aprende um pouco mais.",
-    "As mulheres têm papel fundamental na tecnologia. Incentive e convide todas para o Corujão!"
-  ];
-
-  let usuario = "", senha = "";
+  // Estado do usuário
+  let usuario = "";
   let logado = false;
   let salaAtual = "geral";
-  let polling = null;
-  let mensagensCache = [];
-  let mensagensPrivadas = {};
   let socket = null;
+  let mensagensCache = [];
 
+  // Funções auxiliares
   function appendLine(txt, className = "") {
     const line = document.createElement('div');
     if (className) line.className = className;
@@ -56,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
     term.scrollTop = term.scrollHeight;
   }
 
-  function appendInput(prompt, callback, isPassword = false) {
+  function appendInput(prompt, callback) {
     const row = document.createElement('div');
     row.style.display = 'flex';
     row.style.alignItems = 'center';
@@ -66,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     row.appendChild(promptSpan);
 
     const input = document.createElement('input');
-    input.type = isPassword ? "password" : "text";
+    input.type = "text";
     input.className = "terminal-input";
     row.appendChild(input);
     term.appendChild(row);
@@ -80,60 +58,107 @@ document.addEventListener('DOMContentLoaded', () => {
         callback(value);
       }
     });
-    term.scrollTop = term.scrollHeight;
   }
 
-  function destacarMencoes(texto) {
-    return texto.replace(/@([a-zA-Z0-9_]+)/g, (match, nome) => {
-      if (nome.toLowerCase() === usuario.toLowerCase()) {
-        return `<span class="nick self">@${nome}</span>`;
+  // Sistema de autenticação
+  async function handleLogin(username, password) {
+    try {
+      const response = await fetch(`${API_AUTH}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        usuario = username;
+        logado = true;
+        authModal.style.display = 'none';
+        iniciarChat();
       } else {
-        return `<span class="nick">@${nome}</span>`;
+        appendLine(`Erro no login: ${data.error}`, "terminal-erro");
       }
-    });
+    } catch (error) {
+      appendLine("Erro na conexão com o servidor", "terminal-erro");
+      console.error('Login error:', error);
+    }
+  }
+
+  async function handleRegister(username, password) {
+    try {
+      const response = await fetch(`${API_AUTH}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        appendLine(`Registro bem-sucedido! Agora faça login.`, "terminal-success");
+        switchAuthMode();
+      } else {
+        appendLine(`Erro no registro: ${data.error}`, "terminal-erro");
+      }
+    } catch (error) {
+      appendLine("Erro na conexão com o servidor", "terminal-erro");
+      console.error('Register error:', error);
+    }
+  }
+
+  function switchAuthMode() {
+    const isLogin = loginForm.style.display !== 'none';
+    loginForm.style.display = isLogin ? 'none' : 'block';
+    registerForm.style.display = isLogin ? 'block' : 'none';
+    authSwitch.textContent = isLogin ? 'Já tem conta? Faça login' : 'Não tem conta? Registre-se';
+  }
+
+  // Event listeners para autenticação
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await handleLogin(usernameInput.value, passwordInput.value);
+  });
+
+  registerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await handleRegister(usernameInput.value, passwordInput.value);
+  });
+
+  authSwitch.addEventListener('click', switchAuthMode);
+
+  // Sistema de chat
+  function iniciarChat() {
+    term.innerHTML = '';
+    appendLine("Bem-vindo ao Corujão Chat!", "terminal-info");
+    appendLine("Digite /ajuda para ver os comandos disponíveis", "terminal-info");
+    
+    iniciarSocketIO();
+    carregarMensagensIniciais();
+    promptComando();
   }
 
   function iniciarSocketIO() {
-    socket = io('https://corujao-rank-1.onrender.com', {
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      transports: ['websocket']
+    socket = io(SOCKET_URL, {
+      withCredentials: true,
+      reconnectionAttempts: 5
     });
 
     socket.on('connect', () => {
-      appendLine("[Conectado ao servidor em tempo real]", "terminal-info");
-      socket.emit('join', { usuario, sala: salaAtual });
+      appendLine("[Conectado ao chat em tempo real]", "terminal-success");
+      socket.emit('joinRoom', salaAtual);
     });
 
-    socket.on('disconnect', () => {
-      appendLine("[Conexão perdida. Tentando reconectar...]", "terminal-erro");
-    });
-
-    socket.on('nova_mensagem', (msg) => {
-      if ((msg.sala || "geral") !== salaAtual) return;
-
-      const hora = msg.hora || "--:--";
-      const nome = msg.nome || "anon";
-      const texto = destacarMencoes(msg.texto || "");
-
+    socket.on('new_message', (msg) => {
+      if (msg.room !== salaAtual) return;
+      
       appendLine(
-        `<span class="hora">${hora}</span> <span class="nick${nome === usuario ? ' self' : ''}">@${nome}</span>: ${texto}`,
-        nome === usuario ? "msg-voce" : "msg-corujao"
+        `<span class="hora">${new Date(msg.createdAt).toLocaleTimeString()}</span> ` +
+        `<span class="nick${msg.user.username === usuario ? ' self' : ''}">@${msg.user.username}</span>: ` +
+        `${msg.text}`,
+        msg.user.username === usuario ? "msg-voce" : "msg-corujao"
       );
-
-      mensagensCache.push(msg);
-    });
-
-    socket.on('mensagem_privada', (data) => {
-      receberMensagemPrivada(data.de, data.mensagem);
-    });
-
-    socket.on('usuario_entrou', (nick) => {
-      appendLine(`<span class="terminal-info">@${nick} entrou na sala</span>`);
-    });
-
-    socket.on('usuario_saiu', (nick) => {
-      appendLine(`<span class="terminal-info">@${nick} saiu da sala</span>`);
     });
 
     socket.on('error', (err) => {
@@ -141,138 +166,84 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function carregarMensagensChat() {
-    if (!logado) return;
+  async function carregarMensagensIniciais() {
     try {
-      const res = await fetch(`${API_URL}?sala=${encodeURIComponent(salaAtual)}`);
-      if (!res.ok) throw new Error('Falha na requisição');
-      const msgs = await res.json();
-      if (JSON.stringify(msgs) !== JSON.stringify(mensagensCache)) {
-        limparChatVisual();
-        msgs.forEach(msg => {
-          if ((msg.sala || "geral") !== salaAtual) return;
-          const hora = msg.hora || "--:--";
-          const nome = msg.nome || "anon";
-          const texto = destacarMencoes(msg.texto || "");
-          appendLine(
-            `<span class="hora">${hora}</span> <span class="nick${nome === usuario ? ' self' : ''}">@${nome}</span>: ${texto}`,
-            nome === usuario ? "msg-voce" : "msg-corujao"
-          );
-        });
-        mensagensCache = msgs;
-      }
-    } catch (e) {
-      console.error('Erro ao carregar mensagens:', e);
-      appendLine("[Falha ao sincronizar com servidor...]", "terminal-erro");
+      const response = await fetch(`${API_URL}?room=${salaAtual}`);
+      const messages = await response.json();
+      
+      messages.forEach(msg => {
+        appendLine(
+          `<span class="hora">${new Date(msg.createdAt).toLocaleTimeString()}</span> ` +
+          `<span class="nick${msg.user.username === usuario ? ' self' : ''}">@${msg.user.username}</span>: ` +
+          `${msg.text}`,
+          msg.user.username === usuario ? "msg-voce" : "msg-corujao"
+        );
+      });
+    } catch (error) {
+      console.error('Error loading messages:', error);
     }
   }
 
-  function limparChatVisual() {
-    const lines = Array.from(term.querySelectorAll('.msg-voce, .msg-corujao'));
-    lines.forEach(line => line.remove());
-  }
+  async function enviarMensagem(texto) {
+    if (!texto.trim()) return;
 
-  async function enviarMensagemBackend(texto) {
-    if (!usuario) return;
-    try {
-      if (socket && socket.connected) {
-        socket.emit('enviar_mensagem', {
-          nome: usuario,
-          texto,
-          sala: salaAtual
-        });
-      } else {
-        const response = await fetch(API_URL, {
+    if (socket && socket.connected) {
+      socket.emit('sendMessage', {
+        room: salaAtual,
+        text: texto
+      });
+    } else {
+      try {
+        await fetch(API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nome: usuario, texto, sala: salaAtual })
+          body: JSON.stringify({
+            text: texto,
+            room: salaAtual
+          }),
+          credentials: 'include'
         });
-        if (!response.ok) throw new Error('Falha ao enviar mensagem');
+      } catch (error) {
+        appendLine("Erro ao enviar mensagem", "terminal-erro");
       }
-    } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
-      appendLine("[Erro ao enviar mensagem]", "terminal-erro");
     }
   }
 
-  function receberMensagemPrivada(de, msg) {
-    if (!mensagensPrivadas[de]) mensagensPrivadas[de] = [];
-    mensagensPrivadas[de].push(msg);
-    appendLine(`<span class="msg-privado">[PRIVADO de @${de}]: ${msg}</span>`, "msg-privado");
-  }
-
-  function enviarMensagemPrivada(para, msg) {
-    if (!mensagensPrivadas[para]) mensagensPrivadas[para] = [];
-    mensagensPrivadas[para].push(msg);
-    appendLine(`<span class="msg-privado">[PRIVADO para @${para}]: ${msg}</span>`, "msg-privado");
-    if (socket && socket.connected) {
-      socket.emit('mensagem_privada', {
-        de: usuario,
-        para,
-        mensagem: msg
-      });
+  function processaComando(txt) {
+    const comando = txt.trim();
+    if (!comando) {
+      promptComando();
+      return;
     }
-  }
 
-  async function mostrarRanking() {
-    try {
-      const res = await fetch(API_RANKING);
-      if (!res.ok) throw new Error('Falha ao carregar ranking');
-      const rank = await res.json();
-      appendLine("<b>TOP CORUJÕES</b>", "terminal-info");
-      rank.forEach((r, i) => appendLine(`${i + 1}. @${r.nick} - ${r.pontos} pontos`, "terminal-info"));
-    } catch (e) {
-      console.error('Erro ao carregar ranking:', e);
-      appendLine("Ranking indisponível.", "terminal-info");
-    }
-  }
-
-  function mostrarBadge(nick) {
-    if (!nick) nick = usuario;
-    const badges = {
-      'ederkof': 'Lenda Viva',
-      'admin': 'Moderador',
-      'anon': 'Invisível'
-    };
-    appendLine(`Badge de @${nick}: ${badges[nick] || 'Coruja'}`, "terminal-info");
-  }
-
-  function mostrarCuriosidade() {
-    const idx = Math.floor(Math.random() * curiosidades.length);
-    appendLine(`<b>Curiosidade do Dia:</b> ${curiosidades[idx]}`, "terminal-info");
-  }
-
-  function iniciar() {
-    if (polling) clearInterval(polling);
-    if (socket) socket.disconnect();
-    term.innerHTML = '';
-    salaAtual = "geral";
-    manifesto.forEach(linha => appendLine(linha, "terminal-info"));
-    appendInput('Crie seu nome, sua história: ', nomeCriado);
-  }
-
-  function nomeCriado(nome) {
-    usuario = nome.trim();
-    if (usuario.length < 2) {
-      appendLine("Nome muito curto. Tente novamente.", "terminal-info");
-      appendInput('Crie seu nome, sua história: ', nomeCriado);
+    if (comando.startsWith('/')) {
+      const [cmd, ...args] = comando.slice(1).split(' ');
+      
+      switch(cmd) {
+        case 'sala':
+          if (args.length) {
+            salaAtual = args[0];
+            if (socket) socket.emit('joinRoom', salaAtual);
+            appendLine(`Entrou na sala: ${salaAtual}`, "terminal-info");
+            carregarMensagensIniciais();
+          }
+          break;
+          
+        case 'ranking':
+          mostrarRanking();
+          break;
+          
+        case 'ajuda':
+          mostrarAjuda();
+          break;
+          
+        default:
+          appendLine(`Comando desconhecido: /${cmd}`, "terminal-erro");
+      }
     } else {
-      appendLine(`Usuário: ${usuario}`);
-      appendInput('Sua senha: ', senhaCriada, true);
+      enviarMensagem(comando);
     }
-  }
-
-  function senhaCriada(s) {
-    senha = s;
-    appendLine(`Senha: ${'*'.repeat(senha.length)}`);
-    appendLine(`Bem-vindo(a), ${usuario}! Agora é sua vez de deixar história aqui no Corujão Server.`);
-    appendLine("Digite /ajuda para comandos ou comece a criar.");
-    logado = true;
-    iniciarSocketIO();
-    setTimeout(() => {
-      carregarMensagensChat();
-      polling = setInterval(carregarMensagensChat, 2000);
-    }, 500);
+    
     promptComando();
   }
 
@@ -280,66 +251,34 @@ document.addEventListener('DOMContentLoaded', () => {
     appendInput(`[${usuario}@${salaAtual}]$ `, processaComando);
   }
 
-  function mensagemInspiradoraSala(novaSala) {
-    appendLine(`<b>Você criou ou entrou na sala <span style="color:var(--azul-nick)">#${novaSala}</span>!</b>`, "terminal-info");
-    appendLine(`<span style="color:var(--verde2)">
-      Aqui é seu espaço livre para compartilhar, criar, brincar e ser você mesmo.<br>
-      Convide quem quiser, combine encontros, faça enquetes, cante, ore ou só jogue conversa fora!<br>
-      Corujão é liberdade digital de verdade.<br>
-      <i>Sinta-se em casa, a sala é sua!</i>
-    </span>`, "terminal-info");
-
-    if (socket && socket.connected) {
-      socket.emit('trocar_sala', {
-        usuario,
-        salaAntiga: salaAtual,
-        salaNova: novaSala
-      });
-    }
+  function mostrarRanking() {
+    appendLine("Ranking (em desenvolvimento)", "terminal-info");
   }
 
-  function processaComando(txt) {
-    const comando = txt.trim();
-    if (comando === '') {
-      promptComando();
-      return;
-    }
-    if (comando.startsWith('/')) {
-      if (comando.startsWith('/sala ')) {
-        const novaSala = comando.split(' ')[1];
-        salaAtual = novaSala || "geral";
-        mensagemInspiradoraSala(salaAtual);
-        carregarMensagensChat();
-      } else if (comando.startsWith('/privado ')) {
-        const partes = comando.split(' ');
-        if (partes.length < 3) {
-          appendLine("Uso correto: /privado [nick] [mensagem]", "terminal-erro");
+  function mostrarAjuda() {
+    appendLine("<b>Comandos disponíveis:</b>", "terminal-info");
+    appendLine("/sala [nome] - Troca de sala", "terminal-info");
+    appendLine("/ranking - Mostra o ranking", "terminal-info");
+    appendLine("/ajuda - Mostra esta ajuda", "terminal-info");
+  }
+
+  // Inicialização
+  function iniciar() {
+    // Verifica se já está logado
+    fetch(`${API_AUTH}/check`, { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          usuario = data.user.username;
+          logado = true;
+          iniciarChat();
         } else {
-          const nick = partes[1];
-          const mensagem = partes.slice(2).join(' ');
-          enviarMensagemPrivada(nick, mensagem);
+          authModal.style.display = 'flex';
         }
-      } else if (comando === '/ranking') {
-        mostrarRanking();
-      } else if (comando === '/badge') {
-        mostrarBadge();
-      } else if (comando === '/curiosidade') {
-        mostrarCuriosidade();
-      } else if (comando === '/ajuda') {
-        appendLine("<b>Comandos:</b>", "terminal-info");
-        appendLine("/sala [nome] - Troca de sala", "terminal-info");
-        appendLine("/privado [nick] [msg] - Mensagem privada", "terminal-info");
-        appendLine("/ranking - Mostra o ranking", "terminal-info");
-        appendLine("/curiosidade - Mostra uma curiosidade", "terminal-info");
-        appendLine("/badge - Mostra seu badge", "terminal-info");
-        appendLine("/ajuda - Mostra esta ajuda", "terminal-info");
-      } else {
-        appendLine(`Comando desconhecido: ${comando}`, "terminal-erro");
-      }
-    } else {
-      enviarMensagemBackend(comando);
-    }
-    promptComando();
+      })
+      .catch(() => {
+        authModal.style.display = 'flex';
+      });
   }
 
   iniciar();

@@ -62,6 +62,17 @@
     .auth-tab.active {
       background: #4CAF50;
     }
+    
+    /* Novas classes para o terminal.js */
+    .msg-voce { color: #4CAF50; }
+    .msg-corujao { color: #fff; }
+    .terminal-erro { color: #f44336; }
+    .terminal-info { color: #2196F3; }
+    .terminal-success { color: #4CAF50; }
+    .nick { color: #FF9800; }
+    .nick.self { color: #4CAF50; font-weight: bold; }
+    .nick.admin { color: #f44336; }
+    .hora { color: #9E9E9E; }
   </style>
 </head>
 <body>
@@ -110,10 +121,7 @@
           🦉 Corujão Terminal v3.0 | Seja bem-vindo!
         </div>
         
-        <ul id="chat-list">
-          <li class="msg-evento">[21:04] <span class="event-torneio">Torneio 23h</span> – veja detalhes ou participe!</li>
-          <li class="msg-evento">[21:04] <span class="event-desafio">Desafio do Dia</span> – veja detalhes ou participe!</li>
-        </ul>
+        <div id="terminal-corujao"></div>
         
         <div id="terminal-bar">
           <form id="prompt-row" autocomplete="off">
@@ -153,338 +161,33 @@
   <!-- Scripts -->
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="/js/terminal.js"></script>
 
   <script>
-    // Configurações - CORRIGIDO: Removida barra extra no final da URL
+    // Configurações
     const API_BASE = 'https://corujao-rank-production.up.railway.app';
     const AUTH_API = `${API_BASE}/api/auth`;
     
-    // Estado da aplicação
-    const state = {
-      user: null,
-      currentRoom: 'geral',
-      isAdmin: false,
-      onlineUsers: [],
-      rooms: ['geral'],
-      authTab: 'login'
-    };
-
-    // Socket.IO
-    const socket = io(API_BASE, {
-      withCredentials: true,
-      reconnection: true,
-      transports: ['websocket']
-    });
-
-    // Funções de autenticação
+    // Funções de UI que complementam o terminal.js
     function switchAuthTab(tab) {
-      state.authTab = tab;
       document.getElementById('login-form').style.display = tab === 'login' ? 'block' : 'none';
       document.getElementById('register-form').style.display = tab === 'register' ? 'block' : 'none';
       
-      // Atualiza tabs ativas
       document.querySelectorAll('.auth-tab').forEach(el => {
         el.classList.toggle('active', el.textContent.toLowerCase() === tab);
       });
     }
 
-    async function handleLogin() {
-      const username = document.getElementById('login-username').value.trim();
-      const password = document.getElementById('login-password').value;
-      
-      if (!username || !password) {
-        showSystemMessage('Preencha todos os campos', true);
-        return;
-      }
-
-      try {
-        const response = await axios.post(`${AUTH_API}/login`, { username, password });
-        
-        if (response.data.success) {
-          state.user = response.data.user;
-          document.getElementById('terminal-nick').textContent = state.user.username;
-          document.getElementById('auth-modal').style.display = 'none';
-          
-          // Conectar ao socket com credenciais
-          socket.emit('authenticate', { token: response.data.token });
-          showSystemMessage(`Bem-vindo de volta, ${state.user.username}!`);
-          
-          // Carregar dados iniciais
-          loadInitialData();
-        } else {
-          showSystemMessage(response.data.message || 'Erro no login', true);
-        }
-      } catch (error) {
-        showSystemMessage('Erro ao conectar com o servidor', true);
-        console.error('Login error:', error);
-      }
-    }
-
-
-    async function handleRegister() {
-      const username = document.getElementById('register-username').value.trim();
-      const password = document.getElementById('register-password').value;
-      const confirm = document.getElementById('register-confirm').value;
-      
-      if (!username || !password) {
-        showSystemMessage('Preencha todos os campos', true);
-        return;
-      }
-      
-      if (password !== confirm) {
-        showSystemMessage('As senhas não coincidem', true);
-        return;
-      }
-
-      try {
-        const response = await axios.post(`${AUTH_API}/register`, { username, password });
-        
-        if (response.data.success) {
-          showSystemMessage('Cadastro realizado! Faça login para continuar.');
-          switchAuthTab('login');
-        } else {
-          showSystemMessage(response.data.message || 'Erro no cadastro', true);
-        }
-      } catch (error) {
-        showSystemMessage('Erro ao conectar com o servidor', true);
-        console.error('Register error:', error);
-      }
-    }
-
-    // Funções do chat
-    function loadInitialData() {
-      // Carrega lista de salas
-      socket.emit('get-rooms');
-      
-      // Carrega lista de usuários
-      socket.emit('get-users');
-      
-      // Entra na sala padrão
-      joinRoom(state.currentRoom);
-      
-      // Habilita comandos
-      setupCommands();
-    }
-
-    function joinRoom(room) {
-      state.currentRoom = room;
-      socket.emit('join-room', room);
-      showSystemMessage(`Você entrou na sala ${room}`);
-      updateRoomList([...state.rooms, room]);
-    }
-
-    function setupCommands() {
-      const commands = {
-        '/ajuda': () => showHelp(),
-        '/salas': () => showRoomsHelp(),
-        '/criar': (args) => createRoom(args),
-        '/entrar': (args) => joinRoom(args[0]),
-        '/sair': () => joinRoom('geral'),
-        '/limpar': () => clearChat(),
-        '/ranking': () => showRanking()
-      };
-
-      window.comandoRapido = function(cmd) {
-        const input = document.getElementById('msg');
-        input.value = cmd;
-        input.focus();
-      };
-
-      document.getElementById('prompt-row').onsubmit = function(e) {
-        e.preventDefault();
-        const input = document.getElementById('msg');
-        const text = input.value.trim();
-        
-        if (!text) return;
-        
-        // Verifica se é comando
-        if (text.startsWith('/')) {
-          const parts = text.split(' ');
-          const cmd = parts[0].toLowerCase();
-          const args = parts.slice(1);
-          
-          if (commands[cmd]) {
-            commands[cmd](args);
-          } else {
-            showSystemMessage(`Comando desconhecido: ${cmd}`, true);
-          }
-        } else {
-          // Envia mensagem normal
-          socket.emit('chat-message', {
-            room: state.currentRoom,
-            text: text
-          });
-          
-          // Mostra localmente
-          addMessage(state.user.username, text);
-        }
-        
-        input.value = '';
-      };
-    }
-
-    function showHelp() {
-      const helpText = `
-        <strong>Comandos disponíveis:</strong><br>
-        /ajuda - Mostra esta mensagem<br>
-        /salas - Lista salas e como criar<br>
-        /criar [nome] - Cria uma nova sala<br>
-        /entrar [nome] - Entra em uma sala<br>
-        /sair - Volta para a sala geral<br>
-        /limpar - Limpa o chat atual<br>
-        /ranking - Mostra o ranking de usuários
-      `;
-      addMessage('Sistema', helpText, false, true);
-    }
-
-    function showRoomsHelp() {
-      const helpText = `
-        <strong>Salas disponíveis:</strong><br>
-        ${state.rooms.map(r => `#${r}`).join(', ')}<br><br>
-        <strong>Para criar uma sala:</strong><br>
-        Use /criar [nome-da-sala]<br>
-        Exemplo: /criar kof
-      `;
-      addMessage('Sistema', helpText, false, true);
-    }
-
-    function createRoom(roomName) {
-      if (!roomName || !roomName[0]) {
-        showSystemMessage('Uso: /criar [nome-da-sala]', true);
-        return;
-      }
-      
-      const room = roomName[0].toLowerCase();
-      if (state.rooms.includes(room)) {
-        showSystemMessage(`A sala #${room} já existe!`, true);
-        return;
-      }
-      
-      socket.emit('create-room', room);
-      showSystemMessage(`Sala #${room} criada com sucesso!`);
-    }
-
-    function clearChat() {
-      const chat = document.getElementById('chat-list');
-      if (chat) {
-        chat.innerHTML = '';
-        showSystemMessage('Chat limpo com sucesso');
-      }
-    }
-
-    function showRanking() {
-      socket.emit('get-ranking', (ranking) => {
-        const rankingText = `
-          <strong>Ranking de Usuários:</strong><br>
-          ${ranking.map((user, index) => 
-            `${index + 1}. ${user.username} - ${user.points} pontos`
-          ).join('<br>')}
-        `;
-        addMessage('Sistema', rankingText, false, true);
-      });
-    }
-
-    // Funções de UI
-    function showSystemMessage(text, isError = false) {
-      const chat = document.getElementById('chat-list');
-      if (!chat) return;
-
-      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-      const li = document.createElement('li');
-      li.className = isError ? 'msg-erro' : 'msg-evento';
-      li.innerHTML = `[${hora}] ${text}`;
-      chat.appendChild(li);
-      chat.scrollTop = chat.scrollHeight;
-    }
-
-    function addMessage(from, text, isAdmin = false, isSystem = false) {
-      const chat = document.getElementById('chat-list');
-      if (!chat) return;
-
-      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-      const li = document.createElement('li');
-      
-      if (isSystem) {
-        li.className = 'msg-evento';
-      } else {
-        li.className = from === state.user?.username ? 'msg-voce' : 'msg-externa';
-        if (isAdmin) li.classList.add('admin-msg');
-      }
-
-      li.innerHTML = `[${hora}] ${formatNickname(from)}: ${formatMessage(text)}`;
-      chat.appendChild(li);
-      chat.scrollTop = chat.scrollHeight;
-    }
-
-    function formatNickname(nick) {
-      if (!nick) return '';
-      const isSelf = nick === state.user?.username;
-      const isAdmin = state.onlineUsers.find(u => u.username === nick)?.isAdmin;
-      return `<span class="nick ${isSelf ? 'self' : ''} ${isAdmin ? 'admin' : ''}">@${nick}</span>`;
-    }
-
-    function formatMessage(text) {
-      return text
-        .replace(/:coruja:/g, '🦉')
-        .replace(/:fogo:/g, '🔥')
-        .replace(/@(\w+)/g, (match, nick) => formatNickname(nick));
-    }
-
-    function updateUserList(users) {
-      state.onlineUsers = users;
-      const list = document.getElementById('lista-amigos');
-      if (!list) return;
-
-      list.innerHTML = '';
-      users.forEach(user => {
-        const li = document.createElement('li');
-        li.innerHTML = formatNickname(user.username);
-        li.onclick = () => jogarProCentro(user.username);
-        list.appendChild(li);
-      });
-    }
-
-    function updateRoomList(rooms) {
-      state.rooms = [...new Set(rooms)]; // Remove duplicatas
-      const list = document.getElementById('lista-salas');
-      if (!list) return;
-
-      list.innerHTML = '';
-      state.rooms.forEach(room => {
-        const li = document.createElement('li');
-        li.textContent = `#${room}`;
-        li.onclick = () => jogarProCentro(room, 'sala');
-        list.appendChild(li);
-      });
-    }
-
-    // Funções do layout original
-    function jogarProCentro(nome, tipo) {
-      if (tipo === 'sala') {
-        joinRoom(nome);
-      } else {
-        const chat = document.getElementById('chat-list');
-        if (!chat) return;
-
-        const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-        const li = document.createElement('li');
-        li.className = "msg-voce";
-        li.innerHTML = `[${hora}] Você iniciou conversa com ${formatNickname(nome)}`;
-        chat.appendChild(li);
-        chat.scrollTop = chat.scrollHeight;
-      }
-    }
-
     function eventoPainel(texto, classe) {
-      const chat = document.getElementById('chat-list');
-      if (!chat) return;
+      const terminal = document.getElementById('terminal-corujao');
+      if (!terminal) return;
 
       const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-      const li = document.createElement('li');
-      li.className = "msg-evento";
-      li.innerHTML = `[${hora}] <span class="${classe}">${texto}</span> – veja detalhes ou participe!`;
-      chat.appendChild(li);
-      chat.scrollTop = chat.scrollHeight;
+      const div = document.createElement('div');
+      div.className = "terminal-info";
+      div.innerHTML = `[${hora}] <span class="${classe}">${texto}</span> – veja detalhes ou participe!`;
+      terminal.appendChild(div);
+      terminal.scrollTop = terminal.scrollHeight;
     }
 
     function mudarTema(tema) {
@@ -497,40 +200,27 @@
       });
     }
 
-    // Eventos do Socket.IO
-    socket.on('connect', () => {
-      showSystemMessage('Conectado ao servidor');
-    });
-
-    socket.on('disconnect', () => {
-      showSystemMessage('Desconectado do servidor', true);
-    });
-
-    socket.on('chat-message', (data) => {
-      addMessage(data.from, data.text, data.isAdmin);
-    });
-
-    socket.on('user-list', (users) => {
-      updateUserList(users);
-    });
-
-    socket.on('room-list', (rooms) => {
-      updateRoomList(rooms);
-    });
-
-    socket.on('room-created', (room) => {
-      showSystemMessage(`Nova sala criada: #${room}`);
-      updateRoomList([...state.rooms, room]);
-    });
-
-    socket.on('error', (err) => {
-      showSystemMessage(`Erro: ${err.message}`, true);
-    });
+    function comandoRapido(cmd) {
+      const input = document.getElementById('msg');
+      input.value = cmd;
+      input.focus();
+    }
 
     // Inicialização
     document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('auth-modal').style.display = 'flex';
-      document.getElementById('login-username').focus();
+      // Verifica se já está logado
+      axios.get(`${AUTH_API}/check`, { withCredentials: true })
+        .then(response => {
+          if (response.data.success) {
+            document.getElementById('auth-modal').style.display = 'none';
+            document.getElementById('terminal-nick').textContent = response.data.user.username;
+          } else {
+            document.getElementById('auth-modal').style.display = 'flex';
+          }
+        })
+        .catch(() => {
+          document.getElementById('auth-modal').style.display = 'flex';
+        });
     });
   </script>
 </body>
