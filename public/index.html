@@ -208,34 +208,7 @@
 
     // Inicialização
     document.addEventListener('DOMContentLoaded', () => {
-      // Garante que os elementos existam
-      if (!document.getElementById('auth-modal') || !document.getElementById('terminal-nick')) {
-        console.error('Elementos essenciais não encontrados!');
-        return;
-      }
-
-      // Verifica se já está logado (código original mantido)
-      axios.get(`${AUTH_API}/check`, { withCredentials: true })
-        .then(response => {
-          if (response.data.success) {
-            document.getElementById('auth-modal').style.display = 'none';
-            document.getElementById('terminal-nick').textContent = response.data.user.username;
-            
-            // Inicializa o terminal APÓS login (adicione esta linha)
-            if (typeof initTerminal === 'function') initTerminal();
-          } else {
-            document.getElementById('auth-modal').style.display = 'flex';
-          }
-        })
-        .catch(() => {
-          document.getElementById('auth-modal').style.display = 'flex';
-        });
-    });
-  </script>
-</body>
-</html>
-    document.addEventListener('DOMContentLoaded', () => {
-      // Verifica se já está logado
+      // Verifica se já está logado (código original preservado)
       axios.get(`${AUTH_API}/check`, { withCredentials: true })
         .then(response => {
           if (response.data.success) {
