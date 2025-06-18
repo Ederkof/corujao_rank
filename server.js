@@ -150,6 +150,31 @@ authRouter.post('/login', async (req, res) => {
   }
 });
 
+authRouter.get('/check', async (req, res) => {
+  if (!req.session.userId) {
+    return res.json({ success: false });
+  }
+
+  try {
+    const user = await User.findById(req.session.userId);
+    if (!user) {
+      return res.json({ success: false });
+    }
+
+    res.json({ 
+      success: true,
+      user: {
+        id: user._id,
+        username: user.username,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao verificar autenticação:', error);
+    res.status(500).json({ success: false });
+  }
+});
+
 authRouter.post('/logout', (req, res) => {
   req.session.destroy(err => {
     if (err) {

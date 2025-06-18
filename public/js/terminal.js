@@ -280,6 +280,25 @@ document.addEventListener('DOMContentLoaded', () => {
         authModal.style.display = 'flex';
       });
   }
-
+// Corrige o handleLogin não definido
+window.handleLogin = async function() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  
+  try {
+    const response = await fetch('https://corujao-rank-production.up.railway.app/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    
+    if (response.ok) {
+      document.getElementById('auth-modal').style.display = 'none';
+      location.reload(); // Recarrega a página após login
+    }
+  } catch (error) {
+    console.error("Erro no login:", error);
+  }
+};
   iniciar();
 });
