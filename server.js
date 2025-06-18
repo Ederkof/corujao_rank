@@ -28,7 +28,7 @@ const rateLimiter = {
   consume(ip) {
     const now = Date.now();
     const windowMs = 60 * 1000;
-    const maxRequests = 5;
+    const maxRequests = 100; // Aumentei para 100 requisições por minuto
 
     if (!this.ips.has(ip)) {
       this.ips.set(ip, { count: 1, startTime: now });
@@ -61,7 +61,9 @@ const rateLimiter = {
 // MongoDB Connection
 mongoose.connect(MONGODB_URI, { 
   serverSelectionTimeoutMS: 5000, 
-  socketTimeoutMS: 10000 
+  socketTimeoutMS: 10000,
+  useNewUrlParser: true,
+  useUnifiedTopology: true
 })
 .then(() => console.log('✅ MongoDB conectado com sucesso'))
 .catch((err) => {
@@ -82,6 +84,7 @@ const userSchema = new mongoose.Schema(
     },
     password: { type: String, required: true, select: false },
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    avatar: { type: String, default: '' }
   },
   { timestamps: true }
 );
@@ -113,7 +116,15 @@ const sessionMiddleware = session({
 });
 
 // Middlewares
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+app.use(cors({
+  origin: [FRONTEND_URL, 'https://corujao-rank-production.up.railway.app'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.options('*', cors()); // Habilitar pre-flight para todas as rotas
+
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(sessionMiddleware);
@@ -150,10 +161,17 @@ apiRouter.post('/auth/register', async (req, res) => {
 
     await user.save();
 
+    req.session.userId = user._id;
+    req.session.save();
+
     res.status(201).json({ 
       success: true,
       message: 'Usuário registrado com sucesso',
-      userId: user._id
+      user: {
+        id: user._id,
+        username: user.username,
+        role: user.role
+      }
     });
 
   } catch (error) {
@@ -223,13 +241,47 @@ apiRouter.post('/auth/logout', (req, res) => {
   });
 });
 
+apiRouter.get('/auth/check', async (req, res) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ 
+      success: false,
+      error: 'Não autenticado' 
+    });
+  }
+
+  try {
+    const user = await User.findById(req.session.userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Usuário não encontrado' 
+      });
+    }
+
+    res.json({ 
+      success: true,
+      user: {
+        id: user._id,
+        username: user.username,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao verificar autenticação:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Erro interno no servidor' 
+    });
+  }
+});
+
 // Mount API router
 app.use('/api', apiRouter);
 
 // Socket.io Configuration
 const io = socketIO(server, {
   cors: {
-    origin: FRONTEND_URL,
+    origin: [FRONTEND_URL, 'https://corujao-rank-production.up.railway.app'],
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -275,48 +327,77 @@ io.use((socket, next) => {
 });
 
 // Socket handlers
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   const session = socket.request.session;
   console.log('🔌 Nova conexão:', socket.id, 'Usuário:', session.userId);
 
-  socket.on('joinRoom', (room) => {
-    if (['general', 'support', 'offtopic'].includes(room)) {
-      socket.join(room);
-      socket.emit('systemMessage', `Você entrou na sala ${room}`);
+  try {
+    const user = await User.findById(session.userId);
+    if (!user) {
+      socket.emit('auth_error', { message: 'Usuário não encontrado' });
+      return socket.disconnect(true);
     }
-  });
 
-  socket.on('sendMessage', async ({ room, text }) => {
-    try {
-      if (!text || typeof text !== 'string' || !room) {
-        return socket.emit('error', 'Dados inválidos');
+    socket.user = {
+      id: user._id,
+      username: user.username,
+      role: user.role
+    };
+
+    // Enviar histórico de mensagens ao conectar
+    const messages = await Message.find()
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .populate('user', 'username')
+      .lean();
+
+    socket.emit('messageHistory', messages.reverse());
+
+    socket.on('joinRoom', (room) => {
+      if (['general', 'support', 'offtopic'].includes(room)) {
+        socket.join(room);
+        socket.emit('systemMessage', `Você entrou na sala ${room}`);
       }
-      
-      const trimmedText = text.trim().substring(0, 500);
-      const message = new Message({
-        user: session.userId,
-        text: trimmedText,
-        room,
-      });
-      
-      await message.save();
-      await message.populate('user', 'username');
+    });
 
-      io.to(room).emit('newMessage', {
-        _id: message._id,
-        user: { _id: session.userId, username: message.user.username },
-        text: message.text,
-        room: message.room,
-        createdAt: message.createdAt,
-      });
-    } catch (err) {
-      socket.emit('error', 'Erro ao enviar mensagem');
-    }
-  });
+    socket.on('sendMessage', async ({ room, text }) => {
+      try {
+        if (!text || typeof text !== 'string' || !room) {
+          return socket.emit('error', 'Dados inválidos');
+        }
+        
+        const trimmedText = text.trim().substring(0, 500);
+        const message = new Message({
+          user: session.userId,
+          text: trimmedText,
+          room,
+        });
+        
+        await message.save();
+        await message.populate('user', 'username');
 
-  socket.on('disconnect', () => {
-    console.log('🔌 Conexão encerrada:', socket.id);
-  });
+        io.to(room).emit('newMessage', {
+          _id: message._id,
+          user: { _id: socket.user.id, username: socket.user.username },
+          text: message.text,
+          room: message.room,
+          createdAt: message.createdAt,
+        });
+      } catch (err) {
+        console.error('Erro ao enviar mensagem:', err);
+        socket.emit('error', 'Erro ao enviar mensagem');
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('🔌 Conexão encerrada:', socket.id);
+    });
+
+  } catch (err) {
+    console.error('Erro na conexão do socket:', err);
+    socket.emit('error', 'Erro interno no servidor');
+    socket.disconnect(true);
+  }
 });
 
 // Limpeza de arquivos temporários

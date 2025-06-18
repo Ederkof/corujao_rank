@@ -155,8 +155,8 @@
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 
   <script>
-    // Configurações
-    const API_BASE = 'https://corujao-rank-production.up.railway.app/';
+    // Configurações - CORRIGIDO: Removida barra extra no final da URL
+    const API_BASE = 'https://corujao-rank-production.up.railway.app';
     const AUTH_API = `${API_BASE}/api/auth`;
     
     // Estado da aplicação
@@ -220,6 +220,7 @@
       }
     }
 
+
     async function handleRegister() {
       const username = document.getElementById('register-username').value.trim();
       const password = document.getElementById('register-password').value;
@@ -282,7 +283,6 @@
         '/limpar': () => clearChat(),
         '/ranking': () => showRanking()
       };
-
 
       window.comandoRapido = function(cmd) {
         const input = document.getElementById('msg');
