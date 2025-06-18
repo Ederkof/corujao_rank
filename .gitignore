@@ -1,1 +1,12 @@
+# Ignorar dependências
+node_modules/
 .env
+
+# Logs e backups
+*.log
+*.bak
+.DS_Store
+
+# Diretórios locais
+backup_local/
+test-folder/

@@ -1,4 +1,4 @@
-require('dotenv').config();
+krequire('dotenv').config();
 
 // Dependências principais
 const express = require('express');
@@ -12,6 +12,7 @@ const http = require('http');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
+const limparArquivosTemporarios = require('./clean.js'); // ✅ Correção aqui
 
 // Inicialização do app
 const app = express();
@@ -94,13 +95,8 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 // CONEXÃO COM BANCO DE DADOS
 // ======================
 mongoose.connect(MONGODB_URI, {
-  dbName: 'corujao_chat',
-  connectTimeoutMS: 30000,
-  socketTimeoutMS: 30000,
   serverSelectionTimeoutMS: 5000,
-  retryWrites: true,
-  retryReads: true,
-  autoIndex: NODE_ENV === 'development'
+  socketTimeoutMS: 10000
 })
 .then(() => console.log('✅ MongoDB conectado com sucesso'))
 .catch(err => {
@@ -266,6 +262,17 @@ io.on('connection', (socket) => {
 });
 
 // ======================
+// LIMPEZA DE ARQUIVOS TEMPORÁRIOS
+// ======================
+limparArquivosTemporarios();
+
+process.on('exit', limparArquivosTemporarios);
+process.on('SIGINT', () => {
+  limparArquivosTemporarios();
+  process.exit();
+});
+
+// ======================
 // INICIALIZAÇÃO DO SERVIDOR
 // ======================
 server.listen(PORT, () => {
@@ -285,3 +292,4 @@ process.on('uncaughtException', (err) => {
   console.error('❌ Exceção não capturada:', err);
   process.exit(1);
 });
+
