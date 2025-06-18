@@ -8,21 +8,27 @@
   <link rel="stylesheet" href="/css/style.css"/>
 </head>
 <body>
+  <!-- Modal de Login (adicionado) -->
+  <div id="login-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; display: flex; justify-content: center; align-items: center;">
+    <div style="background: #1a1a1a; padding: 2rem; border-radius: 5px; border: 1px solid #4CAF50; width: 300px;">
+      <h3 style="color: #4CAF50; margin-top: 0;">🦉 Corujão Terminal</h3>
+      <p>Digite seu nickname para entrar:</p>
+      <input type="text" id="login-nick" placeholder="Seu nickname (3-20 caracteres)" style="width: 100%; padding: 8px; margin-bottom: 10px; background: #222; color: #fff; border: 1px solid #333;"/>
+      <button id="login-button" style="width: 100%; padding: 8px; background: #4CAF50; color: white; border: none; cursor: pointer;">Entrar</button>
+    </div>
+  </div>
+
   <div id="layout">
     <!-- Sidebar Esquerda - Amigos e Salas -->
     <div id="sidebar-esq">
       <div class="sidebar-titulo">Amigos Online</div>
       <ul id="lista-amigos">
-        <li onclick="jogarProCentro('lucas')">lucas</li>
-        <li onclick="jogarProCentro('ana')">ana</li>
-        <li onclick="jogarProCentro('dudu')">dudu</li>
+        <!-- Lista será preenchida dinamicamente -->
       </ul>
       
       <div class="sidebar-titulo">Salas Ativas</div>
       <ul id="lista-salas">
-        <li onclick="jogarProCentro('geral', 'sala')">geral</li>
-        <li onclick="jogarProCentro('kof', 'sala')">kof</li>
-        <li onclick="jogarProCentro('memes', 'sala')">memes</li>
+        <!-- Lista será preenchida dinamicamente -->
       </ul>
     </div>
 
@@ -77,35 +83,110 @@
   <script src="/socket.io/socket.io.js"></script>
 
   <script nonce="CORUJAO_NONCE">
-    // Inicializa Socket.IO
-    const socket = io();
-
-    // Funções essenciais do original
-    function nomeSpan(nome) {
-      const currentUser = document.getElementById('terminal-nick').textContent;
-      if (nome.toLowerCase() === currentUser.toLowerCase()) {
-        return `<span class="nick self">@${nome}</span>`;
+    // Configurações do sistema
+    const config = {
+      API_BASE: 'https://corujao-rank-1.onrender.com',
+      MAX_MESSAGE_LENGTH: 300,
+      RATE_LIMIT: {
+        TIME: 2000, // 2 segundos
+        MAX: 3      // Máximo 3 mensagens
       }
-      return `<span class="nick">@${nome}</span>`;
+    };
+
+    // Estado da aplicação
+    const state = {
+      user: null,
+      currentRoom: 'geral',
+      isAdmin: false,
+      onlineUsers: [],
+      rooms: ['geral'],
+      rateLimit: {
+        count: 0,
+        lastMessage: 0
+      }
+    };
+
+    // Inicialização segura do Socket.IO
+    let socket;
+    try {
+      socket = io(config.API_BASE, {
+        withCredentials: true,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 2000,
+        transports: ['websocket']
+      });
+    } catch (e) {
+      console.error('Erro ao conectar ao servidor:', e);
+      showSystemMessage('Erro de conexão com o servidor');
+    }
+
+    // Funções de segurança
+    function escapeHTML(str) {
+      if (!str) return '';
+      return String(str).replace(/[&<>"'`=\/]/g, tag => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+        "'": '&#39;', '/': '&#x2F;', '`': '&#x60;', '=': '&#x3D;'
+      }[tag]));
+    }
+
+    function sanitizeInput(input, maxLength = config.MAX_MESSAGE_LENGTH) {
+      return escapeHTML(input.toString().trim().substring(0, maxLength));
+    }
+
+    function isValidNick(nick) {
+      return /^[a-zA-Z0-9_]{3,20}$/.test(nick);
+    }
+
+    // Funções de UI
+    function showLoginModal() {
+      const modal = document.getElementById('login-modal');
+      if (modal) modal.style.display = 'flex';
+      document.getElementById('login-nick')?.focus();
+    }
+
+    function hideLoginModal() {
+      const modal = document.getElementById('login-modal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    function showSystemMessage(text, isError = false) {
+      const chat = document.getElementById('chat-list');
+      if (!chat) return;
+
+      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
+      const li = document.createElement('li');
+      li.className = isError ? 'msg-erro' : 'msg-evento';
+      li.innerHTML = `[${hora}] ${sanitizeInput(text)}`;
+      chat.appendChild(li);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function nomeSpan(nome) {
+      if (!nome) return '<span class="nick">@desconhecido</span>';
+      const currentUser = document.getElementById('terminal-nick')?.textContent || '';
+      const isSelf = nome.toLowerCase() === currentUser.toLowerCase();
+      const isAdmin = state.onlineUsers.find(u => u.nick === nome)?.admin;
+      return `<span class="nick ${isSelf ? 'self' : ''} ${isAdmin ? 'admin' : ''}">@${sanitizeInput(nome)}</span>`;
     }
 
     function destacarMencoes(texto) {
-      return texto.replace(/@([a-zA-Z0-9_]+)/g, (match, nome) => nomeSpan(nome));
+      return sanitizeInput(texto).replace(/@([a-zA-Z0-9_]+)/g, (match, nome) => nomeSpan(nome));
     }
 
-    // Variável para guardar sala atual (default 'geral')
-    let salaAtual = 'geral';
-
+    // Funções do chat
     function jogarProCentro(nome, tipo) {
       const chat = document.getElementById('chat-list');
+      if (!chat) return;
+
       const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-      let li = document.createElement('li');
+      const li = document.createElement('li');
       
       if (tipo === 'sala') {
-        salaAtual = nome;  // atualiza a sala atual no front
-        socket.emit('joinRoom', nome);
+        state.currentRoom = nome;
+        socket?.emit('join-room', nome);
         li.className = "msg-evento";
-        li.innerHTML = `[${hora}] Você entrou na sala <span class="nick">#${nome}</span>`;
+        li.innerHTML = `[${hora}] Você entrou na sala ${nomeSpan(nome)}`;
       } else {
         li.className = "msg-voce";
         li.innerHTML = `[${hora}] Você iniciou conversa com ${nomeSpan(nome)}`;
@@ -117,19 +198,22 @@
 
     function eventoPainel(texto, classe) {
       const chat = document.getElementById('chat-list');
+      if (!chat) return;
+
       const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-      let li = document.createElement('li');
+      const li = document.createElement('li');
       li.className = "msg-evento";
-      li.innerHTML = `[${hora}] <span class="${classe}">${texto}</span> – veja detalhes ou participe!`;
+      li.innerHTML = `[${hora}] <span class="${classe}">${sanitizeInput(texto)}</span> – veja detalhes ou participe!`;
       chat.appendChild(li);
       chat.scrollTop = chat.scrollHeight;
     }
 
-    // Funções do novo layout
     function comandoRapido(cmd) {
       const input = document.getElementById('msg');
-      input.value = cmd;
-      input.focus();
+      if (input) {
+        input.value = cmd;
+        input.focus();
+      }
     }
 
     function mudarTema(tema) {
@@ -142,44 +226,140 @@
       });
     }
 
-    // Enviar mensagem via socket e mostrar localmente
-    document.getElementById('prompt-row').onsubmit = function(e) {
-      e.preventDefault();
-      let msg = document.getElementById('msg').value.trim();
-      if(msg) {
-        socket.emit('sendMessage', { room: salaAtual, text: msg });
+    function updateUserList(users) {
+      state.onlineUsers = users;
+      const list = document.getElementById('lista-amigos');
+      if (!list) return;
 
-        const chat = document.getElementById('chat-list');
-        const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-        const nome = document.getElementById('terminal-nick').textContent;
-        
+      list.innerHTML = '';
+      users.forEach(user => {
         const li = document.createElement('li');
-        li.className = "msg-voce";
-        li.innerHTML = `[${hora}] ${nomeSpan(nome)}: ${destacarMencoes(msg)}`;
-        chat.appendChild(li);
-        chat.scrollTop = chat.scrollHeight;
-        document.getElementById('msg').value = "";
+        li.innerHTML = nomeSpan(user.nick);
+        li.onclick = () => jogarProCentro(user.nick);
+        list.appendChild(li);
+      });
+    }
+
+    function updateRoomList(rooms) {
+      state.rooms = rooms;
+      const list = document.getElementById('lista-salas');
+      if (!list) return;
+
+      list.innerHTML = '';
+      rooms.forEach(room => {
+        const li = document.createElement('li');
+        li.textContent = `#${room}`;
+        li.onclick = () => jogarProCentro(room, 'sala');
+        list.appendChild(li);
+      });
+    }
+
+    // Event Listeners
+    function setupEventListeners() {
+      // Login
+      document.getElementById('login-button')?.addEventListener('click', handleLogin);
+      document.getElementById('login-nick')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleLogin();
+      });
+
+      // Envio de mensagens
+      document.getElementById('prompt-row')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        sendMessage();
+      });
+
+      // Socket.IO Events
+      if (socket) {
+        socket.on('connect', () => {
+          showSystemMessage('Conectado ao servidor');
+          socket.emit('join-room', state.currentRoom);
+        });
+
+        socket.on('disconnect', () => {
+          showSystemMessage('Desconectado do servidor', true);
+        });
+
+        socket.on('chat-message', (data) => {
+          addMessage(data.from, data.text, data.admin);
+        });
+
+        socket.on('user-list', updateUserList);
+        socket.on('room-list', updateRoomList);
+
+        socket.on('error', (err) => {
+          showSystemMessage(`Erro: ${err.message}`, true);
+        });
       }
-    };
+    }
 
-    // Receber mensagens do servidor via socket
-    socket.on('message', ({ user, text }) => {
+    function handleLogin() {
+      const nickInput = document.getElementById('login-nick');
+      if (!nickInput) return;
+
+      const nick = nickInput.value.trim();
+      if (!isValidNick(nick)) {
+        showSystemMessage('Nick inválido! Use 3-20 caracteres (a-z, 0-9, _)', true);
+        return;
+      }
+
+      state.user = { username: nick };
+      document.getElementById('terminal-nick').textContent = nick;
+      hideLoginModal();
+
+      if (socket && !socket.connected) {
+        socket.connect();
+      }
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('msg');
+      if (!input || !input.value.trim() || !socket) return;
+
+      // Rate limiting
+      const now = Date.now();
+      if (now - state.rateLimit.lastMessage < config.RATE_LIMIT.TIME) {
+        state.rateLimit.count++;
+        if (state.rateLimit.count > config.RATE_LIMIT.MAX) {
+          showSystemMessage('Aguarde antes de enviar mais mensagens', true);
+          return;
+        }
+      } else {
+        state.rateLimit.count = 1;
+      }
+      state.rateLimit.lastMessage = now;
+
+      const message = {
+        room: state.currentRoom,
+        text: input.value
+      };
+
+      socket.emit('chat-message', message);
+      addMessage(state.user?.username, input.value, state.isAdmin);
+      input.value = '';
+    }
+
+    function addMessage(from, text, isAdmin = false) {
       const chat = document.getElementById('chat-list');
-      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-      let username = user || 'Sistema'; // fallback para sistema
+      if (!chat) return;
 
+      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
       const li = document.createElement('li');
-      li.className = "msg-externa";
-      li.innerHTML = `[${hora}] <span class="nick">@${username}</span>: ${destacarMencoes(text)}`;
+      
+      const isSelf = from === state.user?.username;
+      li.className = isSelf ? 'msg-voce' : 'msg-externa';
+      if (isAdmin) li.classList.add('admin-msg');
+
+      li.innerHTML = `[${hora}] ${nomeSpan(from)}: ${destacarMencoes(text)}`;
       chat.appendChild(li);
       chat.scrollTop = chat.scrollHeight;
+    }
+
+    // Inicialização
+    document.addEventListener('DOMContentLoaded', () => {
+      setupEventListeners();
+      showLoginModal();
+      document.getElementById('msg')?.focus();
     });
-
-    // Inicialização do layout
-    document.getElementById('msg').focus();
   </script>
-
-  <script src="/js/terminal.js"></script>
-  <script src="/js/main.js"></script>
 </body>
 </html>
