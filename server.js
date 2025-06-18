@@ -10,97 +10,68 @@ const socketIO = require('socket.io');
 const http = require('http');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const limparArquivosTemporarios = require('./clean.js');
 
 const app = express();
 const server = http.createServer(app);
 
-// Configs
+// Configurações básicas
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const PORT = process.env.PORT || 4040;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/corujao_chat';
 const SESSION_SECRET = process.env.SESSION_SECRET || uuidv4();
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Rate limiter
-const rateLimiter = {
-  ips: new Map(),
-  consume(ip) {
-    const now = Date.now();
-    const windowMs = 60 * 1000;
-    const maxRequests = 100; // Aumentei para 100 requisições por minuto
-
-    if (!this.ips.has(ip)) {
-      this.ips.set(ip, { count: 1, startTime: now });
-      return { remainingPoints: maxRequests - 1, msBeforeNext: windowMs };
-    }
-
-    const ipData = this.ips.get(ip);
-    if (now - ipData.startTime > windowMs) {
-      ipData.count = 1;
-      ipData.startTime = now;
-      return { remainingPoints: maxRequests - 1, msBeforeNext: windowMs };
-    }
-
-    if (ipData.count >= maxRequests) {
-      return {
-        remainingPoints: 0,
-        msBeforeNext: windowMs - (now - ipData.startTime),
-        isExceeded: true,
-      };
-    }
-
-    ipData.count++;
-    return {
-      remainingPoints: maxRequests - ipData.count,
-      msBeforeNext: windowMs - (now - ipData.startTime),
-    };
-  },
-};
-
-// MongoDB Connection
-mongoose.connect(MONGODB_URI, { 
-  serverSelectionTimeoutMS: 5000, 
+// Conexão com MongoDB
+mongoose.connect(MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000,
   socketTimeoutMS: 10000,
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
 .then(() => console.log('✅ MongoDB conectado com sucesso'))
-.catch((err) => {
+.catch(err => {
   console.error('❌ Falha na conexão com MongoDB:', err);
   process.exit(1);
 });
 
-// Models
-const userSchema = new mongoose.Schema(
-  {
-    username: { 
-      type: String, 
-      required: true, 
-      unique: true, 
-      trim: true, 
-      minlength: 3, 
-      maxlength: 20 
-    },
-    password: { type: String, required: true, select: false },
-    role: { type: String, enum: ['user', 'admin'], default: 'user' },
-    avatar: { type: String, default: '' }
+// Modelos
+const userSchema = new mongoose.Schema({
+  username: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    minlength: 3,
+    maxlength: 20
   },
-  { timestamps: true }
-);
-
-const User = mongoose.model('User', userSchema);
+  password: { type: String, required: true, select: false },
+  role: { type: String, enum: ['user', 'admin'], default: 'user' },
+  avatar: { type: String, default: '' }
+}, { timestamps: true });
 
 const messageSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   text: { type: String, required: true, trim: true, maxlength: 500 },
-  room: { type: String, required: true, enum: ['general', 'support', 'offtopic'] },
+  room: { type: String, required: true, enum: ['general', 'support', 'offtopic'], default: 'general' },
   createdAt: { type: Date, default: Date.now, index: true },
 });
 
+const User = mongoose.model('User', userSchema);
 const Message = mongoose.model('Message', messageSchema);
 
-// Session middleware
+// Middlewares
+app.use(cors({
+  origin: [FRONTEND_URL, 'https://corujao-rank-production.up.railway.app'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Configuração de sessão
 const sessionMiddleware = session({
   secret: SESSION_SECRET,
   name: 'corujao.sid',
@@ -115,32 +86,17 @@ const sessionMiddleware = session({
   },
 });
 
-// Middlewares
-app.use(cors({
-  origin: [FRONTEND_URL, 'https://corujao-rank-production.up.railway.app'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-app.options('*', cors()); // Habilitar pre-flight para todas as rotas
-
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(sessionMiddleware);
-app.use(express.static(path.join(__dirname, 'public')));
 
-// API Routes
-const apiRouter = express.Router();
+// Rotas de autenticação
+const authRouter = express.Router();
 
-// Auth Routes
-apiRouter.post('/auth/register', async (req, res) => {
+authRouter.post('/register', async (req, res) => {
   try {
     const { username, password } = req.body;
     
     if (!username || !password || password.length < 8) {
       return res.status(400).json({ 
-        success: false,
         error: 'Username e password são obrigatórios (mínimo 8 caracteres)' 
       });
     }
@@ -148,137 +104,64 @@ apiRouter.post('/auth/register', async (req, res) => {
     const existingUser = await User.findOne({ username });
     if (existingUser) {
       return res.status(409).json({
-        success: false,
         error: 'Username já está em uso'
       });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-    const user = new User({ 
-      username, 
-      password: hashedPassword 
-    });
-
+    const user = new User({ username, password: hashedPassword });
     await user.save();
 
     req.session.userId = user._id;
-    req.session.save();
-
     res.status(201).json({ 
-      success: true,
       message: 'Usuário registrado com sucesso',
-      user: {
-        id: user._id,
-        username: user.username,
-        role: user.role
-      }
+      user: { id: user._id, username: user.username }
     });
 
   } catch (error) {
     console.error('Erro no registro:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Erro interno no servidor' 
-    });
+    res.status(500).json({ error: 'Erro interno no servidor' });
   }
 });
 
-apiRouter.post('/auth/login', async (req, res) => {
+authRouter.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     const user = await User.findOne({ username }).select('+password');
     
     if (!user) {
-      return res.status(401).json({ 
-        success: false,
-        error: 'Credenciais inválidas' 
-      });
+      return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      return res.status(401).json({ 
-        success: false,
-        error: 'Credenciais inválidas' 
-      });
+      return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
     req.session.userId = user._id;
-    req.session.save();
-
     res.json({ 
-      success: true,
       message: 'Login bem-sucedido',
-      user: {
-        id: user._id,
-        username: user.username,
-        role: user.role
-      }
+      user: { id: user._id, username: user.username }
     });
 
   } catch (error) {
     console.error('Erro no login:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Erro interno no servidor' 
-    });
+    res.status(500).json({ error: 'Erro interno no servidor' });
   }
 });
 
-apiRouter.post('/auth/logout', (req, res) => {
-  req.session.destroy((err) => {
+authRouter.post('/logout', (req, res) => {
+  req.session.destroy(err => {
     if (err) {
-      return res.status(500).json({ 
-        success: false,
-        error: 'Erro ao fazer logout' 
-      });
+      return res.status(500).json({ error: 'Erro ao fazer logout' });
     }
-    
-    res.clearCookie('corujao.sid').json({ 
-      success: true,
-      message: 'Logout efetuado com sucesso' 
-    });
+    res.clearCookie('corujao.sid').json({ message: 'Logout efetuado com sucesso' });
   });
 });
 
-apiRouter.get('/auth/check', async (req, res) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ 
-      success: false,
-      error: 'Não autenticado' 
-    });
-  }
+app.use('/api/auth', authRouter);
 
-  try {
-    const user = await User.findById(req.session.userId);
-    if (!user) {
-      return res.status(404).json({ 
-        success: false,
-        error: 'Usuário não encontrado' 
-      });
-    }
-
-    res.json({ 
-      success: true,
-      user: {
-        id: user._id,
-        username: user.username,
-        role: user.role
-      }
-    });
-  } catch (error) {
-    console.error('Erro ao verificar autenticação:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Erro interno no servidor' 
-    });
-  }
-});
-
-// Mount API router
-app.use('/api', apiRouter);
-
-// Socket.io Configuration
+// Configuração do Socket.io
 const io = socketIO(server, {
   cors: {
     origin: [FRONTEND_URL, 'https://corujao-rank-production.up.railway.app'],
@@ -292,47 +175,23 @@ const io = socketIO(server, {
   pingInterval: 25000,
 });
 
-// Socket middleware
+// Middleware de autenticação para Socket.io
 io.use((socket, next) => {
   sessionMiddleware(socket.request, {}, next);
-});
-
-io.use((socket, next) => {
-  const ip = socket.handshake.address;
-  const rateLimitRes = rateLimiter.consume(ip);
-
-  if (rateLimitRes.isExceeded) {
-    socket.emit('rate_limit_exceeded', {
-      message: 'Muitas requisições! Espere um pouco.',
-      retryAfter: Math.ceil(rateLimitRes.msBeforeNext / 1000),
-    });
-    return next(new Error('Rate limit excedido'));
-  }
-
-  socket.rateLimit = {
-    remaining: rateLimitRes.remainingPoints,
-    reset: Math.floor(Date.now() / 1000) + rateLimitRes.msBeforeNext / 1000,
-  };
-
-  next();
 });
 
 io.use((socket, next) => {
   if (socket.request.session?.userId) {
     next();
   } else {
-    socket.emit('auth_error', { message: 'Requer autenticação' });
     next(new Error('Não autorizado'));
   }
 });
 
-// Socket handlers
+// Lógica do chat em tempo real
 io.on('connection', async (socket) => {
-  const session = socket.request.session;
-  console.log('🔌 Nova conexão:', socket.id, 'Usuário:', session.userId);
-
   try {
-    const user = await User.findById(session.userId);
+    const user = await User.findById(socket.request.session.userId);
     if (!user) {
       socket.emit('auth_error', { message: 'Usuário não encontrado' });
       return socket.disconnect(true);
@@ -344,45 +203,41 @@ io.on('connection', async (socket) => {
       role: user.role
     };
 
-    // Enviar histórico de mensagens ao conectar
+    console.log(`🔌 ${user.username} conectado (${socket.id})`);
+
+    // Enviar histórico de mensagens
     const messages = await Message.find()
       .sort({ createdAt: -1 })
       .limit(50)
       .populate('user', 'username')
       .lean();
 
-    socket.emit('messageHistory', messages.reverse());
+    socket.emit('message_history', messages.reverse());
 
-    socket.on('joinRoom', (room) => {
+    // Eventos do chat
+    socket.on('join_room', (room) => {
       if (['general', 'support', 'offtopic'].includes(room)) {
         socket.join(room);
-        socket.emit('systemMessage', `Você entrou na sala ${room}`);
+        socket.emit('system_message', `Você entrou na sala ${room}`);
       }
     });
 
-    socket.on('sendMessage', async ({ room, text }) => {
+    socket.on('send_message', async ({ room, text }) => {
       try {
-        if (!text || typeof text !== 'string' || !room) {
+        if (!text || !room) {
           return socket.emit('error', 'Dados inválidos');
         }
         
-        const trimmedText = text.trim().substring(0, 500);
         const message = new Message({
-          user: session.userId,
-          text: trimmedText,
+          user: user._id,
+          text: text.trim().substring(0, 500),
           room,
         });
         
         await message.save();
         await message.populate('user', 'username');
 
-        io.to(room).emit('newMessage', {
-          _id: message._id,
-          user: { _id: socket.user.id, username: socket.user.username },
-          text: message.text,
-          room: message.room,
-          createdAt: message.createdAt,
-        });
+        io.to(room).emit('new_message', message);
       } catch (err) {
         console.error('Erro ao enviar mensagem:', err);
         socket.emit('error', 'Erro ao enviar mensagem');
@@ -390,27 +245,23 @@ io.on('connection', async (socket) => {
     });
 
     socket.on('disconnect', () => {
-      console.log('🔌 Conexão encerrada:', socket.id);
+      console.log(`🔌 ${user.username} desconectado (${socket.id})`);
     });
 
   } catch (err) {
     console.error('Erro na conexão do socket:', err);
-    socket.emit('error', 'Erro interno no servidor');
     socket.disconnect(true);
   }
 });
 
-// Limpeza de arquivos temporários
-limparArquivosTemporarios();
-
-// Start server
+// Iniciar servidor
 server.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
   console.log(`🔗 Acessível em: ${FRONTEND_URL}`);
   console.log(`⚡ Modo: ${NODE_ENV}`);
 });
 
-// Error handlers
+// Tratamento de erros
 process.on('unhandledRejection', (err) => {
   console.error('❌ Rejeição não tratada:', err);
 });
@@ -418,10 +269,4 @@ process.on('unhandledRejection', (err) => {
 process.on('uncaughtException', (err) => {
   console.error('❌ Exceção não capturada:', err);
   process.exit(1);
-});
-
-process.on('exit', limparArquivosTemporarios);
-process.on('SIGINT', () => {
-  limparArquivosTemporarios();
-  process.exit();
 });
