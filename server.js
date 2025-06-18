@@ -1,4 +1,4 @@
-krequire('dotenv').config();
+require('dotenv').config();
 
 // Dependências principais
 const express = require('express');
