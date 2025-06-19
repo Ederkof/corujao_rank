@@ -21,7 +21,20 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/coruja
 const SESSION_SECRET = process.env.SESSION_SECRET || uuidv4();
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Modelos
+// Conexão MongoDB
+mongoose.connect(MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 10000,
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log('✅ MongoDB conectado com sucesso'))
+.catch(err => {
+  console.error('❌ Falha na conexão com MongoDB:', err);
+  process.exit(1);
+});
+
+// Schemas e Models
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, trim: true, minlength: 3, maxlength: 20 },
   password: { type: String, required: true, select: false },
@@ -33,7 +46,7 @@ const messageSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   text: { type: String, required: true, trim: true, maxlength: 500 },
   room: { type: String, required: true, enum: ['general', 'support', 'offtopic'], default: 'general' },
-  createdAt: { type: Date, default: Date.now, index: true },
+  createdAt: { type: Date, default: Date.now, index: true }
 });
 
 const User = mongoose.model('User', userSchema);
@@ -46,12 +59,11 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Configuração da sessão
+// Sessão
 const sessionMiddleware = session({
   secret: SESSION_SECRET,
   name: 'corujao.sid',
@@ -59,7 +71,7 @@ const sessionMiddleware = session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: NODE_ENV === 'production', // Em produção, cookie deve ser seguro (HTTPS)
+    secure: NODE_ENV === 'production',
     httpOnly: true,
     sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: 1000 * 60 * 60 * 24 * 14, // 14 dias
@@ -68,21 +80,17 @@ const sessionMiddleware = session({
 
 app.use(sessionMiddleware);
 
-// Rotas de autenticação
+// Rotas Auth
 const authRouter = express.Router();
 
 authRouter.post('/register', async (req, res) => {
   try {
     const { username, password } = req.body;
-    
     if (!username || !password || password.length < 8) {
       return res.status(400).json({ error: 'Username e password são obrigatórios (mínimo 8 caracteres)' });
     }
-
     const existingUser = await User.findOne({ username });
-    if (existingUser) {
-      return res.status(409).json({ error: 'Username já está em uso' });
-    }
+    if (existingUser) return res.status(409).json({ error: 'Username já está em uso' });
 
     const hashedPassword = await bcrypt.hash(password, 12);
     const user = new User({ username, password: hashedPassword });
@@ -90,7 +98,6 @@ authRouter.post('/register', async (req, res) => {
 
     req.session.userId = user._id;
     res.status(201).json({ message: 'Usuário registrado com sucesso', user: { id: user._id, username: user.username } });
-
   } catch (error) {
     console.error('Erro no registro:', error);
     res.status(500).json({ error: 'Erro interno no servidor' });
@@ -101,19 +108,13 @@ authRouter.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     const user = await User.findOne({ username }).select('+password');
-    
-    if (!user) {
-      return res.status(401).json({ error: 'Credenciais inválidas' });
-    }
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
 
     const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(401).json({ error: 'Credenciais inválidas' });
-    }
+    if (!validPassword) return res.status(401).json({ error: 'Credenciais inválidas' });
 
     req.session.userId = user._id;
     res.json({ message: 'Login bem-sucedido', user: { id: user._id, username: user.username } });
-
   } catch (error) {
     console.error('Erro no login:', error);
     res.status(500).json({ error: 'Erro interno no servidor' });
@@ -121,15 +122,10 @@ authRouter.post('/login', async (req, res) => {
 });
 
 authRouter.get('/check', async (req, res) => {
-  if (!req.session.userId) {
-    return res.json({ success: false });
-  }
-
+  if (!req.session.userId) return res.json({ success: false });
   try {
     const user = await User.findById(req.session.userId);
-    if (!user) {
-      return res.json({ success: false });
-    }
+    if (!user) return res.json({ success: false });
 
     res.json({ success: true, user: { id: user._id, username: user.username, role: user.role } });
   } catch (error) {
@@ -140,16 +136,14 @@ authRouter.get('/check', async (req, res) => {
 
 authRouter.post('/logout', (req, res) => {
   req.session.destroy(err => {
-    if (err) {
-      return res.status(500).json({ error: 'Erro ao fazer logout' });
-    }
+    if (err) return res.status(500).json({ error: 'Erro ao fazer logout' });
     res.clearCookie('corujao.sid').json({ message: 'Logout efetuado com sucesso' });
   });
 });
 
 app.use('/api/auth', authRouter);
 
-// Configuração do Socket.io
+// Socket.io
 const io = socketIO(server, {
   cors: {
     origin: [FRONTEND_URL, 'https://corujao-rank-production.up.railway.app'],
@@ -157,24 +151,19 @@ const io = socketIO(server, {
     credentials: true,
   },
   connectionStateRecovery: {
-    maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutos
+    maxDisconnectionDuration: 2 * 60 * 1000,
   },
   pingTimeout: 60000,
   pingInterval: 25000,
 });
 
-// Integrar session middleware no Socket.io
 io.use((socket, next) => {
   sessionMiddleware(socket.request, {}, next);
 });
 
-// Autenticar usuário na conexão socket
 io.use((socket, next) => {
-  if (socket.request.session?.userId) {
-    next();
-  } else {
-    next(new Error('Não autorizado'));
-  }
+  if (socket.request.session?.userId) next();
+  else next(new Error('Não autorizado'));
 });
 
 io.on('connection', async (socket) => {
@@ -185,33 +174,39 @@ io.on('connection', async (socket) => {
       return socket.disconnect(true);
     }
 
-    socket.user = {
-      id: user._id,
-      username: user.username,
-      role: user.role
-    };
-
+    socket.user = { id: user._id, username: user.username, role: user.role };
     console.log(`🔌 ${user.username} conectado (${socket.id})`);
 
-    // Enviar histórico de mensagens (últimas 50)
-    const messages = await Message.find()
-      .sort({ createdAt: -1 })
+    // Enviar histórico da sala 'general' por padrão
+    const messages = await Message.find({ room: 'general' })
+      .sort({ createdAt: 1 }) // do mais antigo para o mais recente
       .limit(50)
       .populate('user', 'username')
       .lean();
 
-    socket.emit('message_history', messages.reverse());
+    socket.emit('message_history', messages);
 
-    socket.on('join_room', (room) => {
+    // Eventos
+    socket.on('join_room', async (room) => {
       if (['general', 'support', 'offtopic'].includes(room)) {
         socket.join(room);
         socket.emit('system_message', `Você entrou na sala ${room}`);
+
+        // Envia histórico da sala escolhida
+        const msgs = await Message.find({ room })
+          .sort({ createdAt: 1 })
+          .limit(50)
+          .populate('user', 'username')
+          .lean();
+        socket.emit('message_history', msgs);
       }
     });
 
     socket.on('send_message', async ({ room, text }) => {
       try {
-        if (!text || !room) return socket.emit('error', 'Dados inválidos');
+        if (!text || !room || !['general', 'support', 'offtopic'].includes(room)) {
+          return socket.emit('error', 'Dados inválidos');
+        }
         
         const message = new Message({
           user: user._id,
@@ -239,31 +234,17 @@ io.on('connection', async (socket) => {
   }
 });
 
-// Conectar ao MongoDB e só então iniciar servidor
-mongoose.connect(MONGODB_URI, {
-  serverSelectionTimeoutMS: 5000,
-  socketTimeoutMS: 10000,
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => {
-  console.log('✅ MongoDB conectado com sucesso');
-  server.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
-    console.log(`🔗 Acessível em: ${FRONTEND_URL}`);
-    console.log(`⚡ Modo: ${NODE_ENV}`);
-  });
-})
-.catch(err => {
-  console.error('❌ Falha na conexão com MongoDB:', err);
-  process.exit(1);
+// Start server
+server.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`🔗 Acessível em: ${FRONTEND_URL}`);
+  console.log(`⚡ Modo: ${NODE_ENV}`);
 });
 
-// Tratamento global de erros
+// Tratamento de erros
 process.on('unhandledRejection', (err) => {
   console.error('❌ Rejeição não tratada:', err);
 });
-
 process.on('uncaughtException', (err) => {
   console.error('❌ Exceção não capturada:', err);
   process.exit(1);
