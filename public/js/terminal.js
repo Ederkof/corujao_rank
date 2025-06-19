@@ -1,158 +1,89 @@
-// terminal.js
+const io = require('socket.io-client');
+const readline = require('readline');
 
-// Conecta ao socket.io com URL explícita e websocket só
-const socket = io('https://corujao-rank-production.up.railway.app', { transports: ['websocket'] });
+const SOCKET_URL = 'http://localhost:4040';
 
-let usuario = null; // Usuário logado
+// Função para login via API (simples, usando fetch)
+const fetch = require('node-fetch');
+const fetchCookie = require('fetch-cookie/node-fetch')(fetch);
+const cookieJar = {};
 
-// Inicia chat após login
-function iniciarChat() {
-  if (!usuario) return;
-
-  // Atualiza nick na interface (logo antes do input, conforme seu HTML)
-  document.getElementById('terminal-nick').textContent = usuario;
-
-  // Esconde modal login/cadastro
-  document.getElementById('auth-modal').style.display = 'none';
-
-  // Mensagem de boas-vindas no terminal
-  appendMensagemSistema(`Bem-vindo(a), ${usuario}!`);
-
-  // Ouve mensagens do servidor
-  socket.on('novaMensagem', msg => {
-    appendMensagem(msg.usuario, msg.texto, msg.hora);
-  });
-
-  // Envio de mensagem via form
-  const form = document.getElementById('prompt-row');
-  form.onsubmit = e => {
-    e.preventDefault();
-    const input = document.getElementById('msg');
-    const texto = input.value.trim();
-    if (!texto) return;
-    socket.emit('enviarMensagem', { usuario, texto });
-    input.value = '';
-  };
-}
-
-// Append mensagem no terminal
-function appendMensagem(usuarioMsg, texto, hora) {
-  const terminal = document.getElementById('terminal-corujao');
-  const horaFormat = hora || new Date().toLocaleTimeString().slice(0, 5);
-  const div = document.createElement('div');
-  div.innerHTML = `[${horaFormat}] <span class="nick">${usuarioMsg}:</span> ${texto}`;
-  terminal.appendChild(div);
-  terminal.scrollTop = terminal.scrollHeight;
-}
-
-// Append mensagem sistema (info)
-function appendMensagemSistema(texto) {
-  const terminal = document.getElementById('terminal-corujao');
-  const div = document.createElement('div');
-  div.className = 'terminal-info';
-  div.textContent = texto;
-  terminal.appendChild(div);
-  terminal.scrollTop = terminal.scrollHeight;
-}
-
-// Login via API
-async function handleLogin() {
-  const username = document.getElementById('login-username').value.trim();
-  const password = document.getElementById('login-password').value;
-
-  if (!username || !password) {
-    alert('Informe usuário e senha!');
-    return;
-  }
-
+async function login(username, password) {
   try {
-    const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/login', {
+    const res = await fetchCookie(`${SOCKET_URL}/api/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify({ username, password }),
+      headers: { 'Content-Type': 'application/json' }
     });
-
-    const data = await res.json();
-
     if (res.ok) {
-      usuario = username;
-      iniciarChat();
+      console.log('Login efetuado com sucesso!');
+      return true;
     } else {
-      alert(data.error || 'Falha no login');
+      console.log('Falha no login:', await res.text());
+      return false;
     }
   } catch (err) {
-    alert('Erro de conexão');
-    console.error(err);
+    console.error('Erro no login:', err);
+    return false;
   }
 }
 
-// Cadastro via API
-async function handleRegister() {
-  const username = document.getElementById('register-username').value.trim();
-  const password = document.getElementById('register-password').value;
-  const confirm = document.getElementById('register-confirm').value;
+async function startChat() {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  if (!username || !password || !confirm) {
-    alert('Preencha todos os campos!');
-    return;
-  }
-  if (password !== confirm) {
-    alert('Senhas não conferem!');
-    return;
-  }
+  rl.question('Usuário: ', async (username) => {
+    rl.question('Senha: ', async (password) => {
+      const logged = await login(username, password);
+      if (!logged) {
+        rl.close();
+        return;
+      }
 
-  try {
-    const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      // Conectar socket com cookie da sessão
+      const socket = io(SOCKET_URL, {
+        withCredentials: true,
+        extraHeaders: {
+          // nenhum cabeçalho extra por enquanto
+        }
+      });
+
+      socket.on('connect', () => {
+        console.log('Conectado ao servidor');
+        socket.emit('join_room', 'general');
+      });
+
+      socket.on('message_history', (messages) => {
+        console.log('Histórico:');
+        messages.forEach(m => {
+          console.log(`[${m.room}] ${m.user.username}: ${m.text}`);
+        });
+      });
+
+      socket.on('new_message', (message) => {
+        console.log(`[${message.room}] ${message.user.username}: ${message.text}`);
+      });
+
+      socket.on('system_message', (msg) => {
+        console.log(`[SYSTEM] ${msg}`);
+      });
+
+      socket.on('error', (err) => {
+        console.log('[ERROR]', err);
+      });
+
+      rl.on('line', (input) => {
+        // Envia mensagem para 'general'
+        if (input.trim().length > 0) {
+          socket.emit('send_message', { room: 'general', text: input });
+        }
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Desconectado do servidor');
+        rl.close();
+      });
     });
-
-    const data = await res.json();
-
-    if (res.ok) {
-      alert('Cadastro realizado com sucesso! Faça login.');
-      switchAuthTab('login');
-    } else {
-      alert(data.error || 'Falha no cadastro');
-    }
-  } catch (err) {
-    alert('Erro de conexão');
-    console.error(err);
-  }
-}
-
-// Verifica login ao carregar página
-async function checkLogin() {
-  try {
-    const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/check', {
-      credentials: 'include',
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      usuario = data.user.username;
-      iniciarChat();
-    } else {
-      document.getElementById('auth-modal').style.display = 'flex';
-    }
-  } catch {
-    document.getElementById('auth-modal').style.display = 'flex';
-  }
-}
-
-// Carregar página: verificar login
-document.addEventListener('DOMContentLoaded', () => {
-  checkLogin();
-});
-
-// Expor funções globais para HTML chamar
-window.handleLogin = handleLogin;
-window.handleRegister = handleRegister;
-window.switchAuthTab = function(tab) {
-  document.getElementById('login-form').style.display = tab === 'login' ? 'block' : 'none';
-  document.getElementById('register-form').style.display = tab === 'register' ? 'block' : 'none';
-  document.querySelectorAll('.auth-tab').forEach(el => {
-    el.classList.toggle('active', el.textContent.toLowerCase() === tab);
   });
-};
+}
+
+startChat();
