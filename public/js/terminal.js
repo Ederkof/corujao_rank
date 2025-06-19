@@ -1,136 +1,148 @@
-// terminal.js - Versão corrigida e completa
+// terminal.js
 
-const API_BASE = 'https://corujao-rank-production.up.railway.app';
-const AUTH_API = `${API_BASE}/api/auth`;
+const socket = io();  // Conecta ao socket.io do servidor
 
-const authModal = document.getElementById('auth-modal');
-const loginForm = document.getElementById('login-form');
-const registerForm = document.getElementById('register-form');
-const terminalNick = document.getElementById('terminal-nick');
-const terminalCorujao = document.getElementById('terminal-corujao');
-const promptRow = document.getElementById('prompt-row');
-const msgInput = document.getElementById('msg');
+let usuario = null; // Usuário logado
+let logado = false;
 
-let currentUser = null;
+// Função que inicia o chat depois do login
+function iniciarChat() {
+  if (!usuario) return;
 
-// Exibe mensagem no terminal (com scroll automático)
-function addTerminalMessage(text, className = 'msg-corujao') {
-  const hora = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+  // Atualiza o nick na interface
+  document.getElementById('terminal-nick').textContent = usuario;
+
+  // Esconde modal
+  document.getElementById('auth-modal').style.display = 'none';
+
+  // Aqui você pode carregar mensagens antigas ou avisos
+  appendMensagemSistema(`Bem-vindo(a), ${usuario}!`);
+
+  // Ouvir mensagens do servidor
+  socket.on('novaMensagem', msg => {
+    appendMensagem(msg.usuario, msg.texto, msg.hora);
+  });
+
+  // Enviar mensagem
+  const form = document.getElementById('prompt-row');
+  form.onsubmit = e => {
+    e.preventDefault();
+    const input = document.getElementById('msg');
+    const texto = input.value.trim();
+    if (!texto) return;
+    socket.emit('enviarMensagem', { usuario, texto });
+    input.value = '';
+  };
+}
+
+// Função que mostra mensagens no terminal
+function appendMensagem(usuarioMsg, texto, hora) {
+  const terminal = document.getElementById('terminal-corujao');
+  const horaFormat = hora || new Date().toLocaleTimeString().slice(0, 5);
   const div = document.createElement('div');
-  div.className = className;
-  div.innerHTML = `[${hora}] ${text}`;
-  terminalCorujao.appendChild(div);
-  terminalCorujao.scrollTop = terminalCorujao.scrollHeight;
+  div.innerHTML = `[${horaFormat}] <span class="nick">${usuarioMsg}:</span> ${texto}`;
+  terminal.appendChild(div);
+  terminal.scrollTop = terminal.scrollHeight;
 }
 
-// Função para trocar a aba de autenticação (login/cadastro) — já está no HTML, só manter
-function switchAuthTab(tab) {
-  if (tab === 'login') {
-    loginForm.style.display = 'block';
-    registerForm.style.display = 'none';
-    document.querySelectorAll('.auth-tab').forEach(el => el.classList.toggle('active', el.textContent.toLowerCase() === 'login'));
-  } else {
-    loginForm.style.display = 'none';
-    registerForm.style.display = 'block';
-    document.querySelectorAll('.auth-tab').forEach(el => el.classList.toggle('active', el.textContent.toLowerCase() === 'cadastro'));
-  }
+function appendMensagemSistema(texto) {
+  const terminal = document.getElementById('terminal-corujao');
+  const div = document.createElement('div');
+  div.className = 'terminal-info';
+  div.textContent = texto;
+  terminal.appendChild(div);
+  terminal.scrollTop = terminal.scrollHeight;
 }
 
-// Função para verificar login ao carregar a página
-async function checkLogin() {
-  try {
-    const response = await axios.get(`${AUTH_API}/check`, { withCredentials: true });
-    if (response.data.success) {
-      currentUser = response.data.user;
-      terminalNick.textContent = currentUser.username;
-      authModal.style.display = 'none';
-      addTerminalMessage(`Bem-vindo, <span class="nick self">${currentUser.username}</span>!`, 'terminal-success');
-    } else {
-      authModal.style.display = 'flex';
-    }
-  } catch (error) {
-    authModal.style.display = 'flex';
-  }
-}
-
-// Função para realizar login
-window.handleLogin = async function() {
+// Login com chamada API
+async function handleLogin() {
   const username = document.getElementById('login-username').value.trim();
-  const password = document.getElementById('login-password').value.trim();
+  const password = document.getElementById('login-password').value;
 
   if (!username || !password) {
-    alert('Por favor, preencha nome de usuário e senha.');
+    alert('Informe usuário e senha!');
     return;
   }
 
   try {
-    const response = await axios.post(`${AUTH_API}/login`, { username, password }, { withCredentials: true });
-    if (response.data.success) {
-      currentUser = response.data.user;
-      terminalNick.textContent = currentUser.username;
-      authModal.style.display = 'none';
-      addTerminalMessage(`Login efetuado com sucesso. Bem-vindo, <span class="nick self">${currentUser.username}</span>!`, 'terminal-success');
+    const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({ username, password })
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      usuario = username;
+      logado = true;
+      iniciarChat();
     } else {
-      alert(response.data.message || 'Erro no login.');
+      alert(data.error || 'Falha no login');
     }
-  } catch (error) {
-    alert('Erro ao conectar com o servidor.');
+  } catch (err) {
+    alert('Erro de conexão');
+    console.error(err);
   }
-};
-
-// Função para realizar cadastro
-window.handleRegister = async function() {
-  const username = document.getElementById('register-username').value.trim();
-  const password = document.getElementById('register-password').value.trim();
-  const confirm = document.getElementById('register-confirm').value.trim();
-
-  if (!username || !password || !confirm) {
-    alert('Por favor, preencha todos os campos.');
-    return;
-  }
-
-  if (password !== confirm) {
-    alert('As senhas não coincidem.');
-    return;
-  }
-
-  try {
-    const response = await axios.post(`${AUTH_API}/register`, { username, password }, { withCredentials: true });
-    if (response.data.success) {
-      alert('Cadastro realizado com sucesso! Faça login agora.');
-      switchAuthTab('login');
-    } else {
-      alert(response.data.message || 'Erro no cadastro.');
-    }
-  } catch (error) {
-    alert('Erro ao conectar com o servidor.');
-  }
-};
-
-// Função para enviar mensagem no terminal
-async function sendMessage(text) {
-  if (!text.trim()) return;
-
-  addTerminalMessage(`<span class="nick self">${currentUser ? currentUser.username : 'visitante'}</span>: ${text}`, 'msg-voce');
-  msgInput.value = '';
-
-  // Aqui você pode implementar o envio via socket ou API conforme sua aplicação
-  // Exemplo básico:
-  // socket.emit('chat message', text);
 }
 
-// Inicialização e eventos
+// Cadastro com chamada API
+async function handleRegister() {
+  const username = document.getElementById('register-username').value.trim();
+  const password = document.getElementById('register-password').value;
+  const confirm = document.getElementById('register-confirm').value;
+
+  if (!username || !password || !confirm) {
+    alert('Preencha todos os campos!');
+    return;
+  }
+  if (password !== confirm) {
+    alert('Senhas não conferem!');
+    return;
+  }
+
+  try {
+    const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/register', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      alert('Cadastro realizado com sucesso! Faça login.');
+      switchAuthTab('login');
+    } else {
+      alert(data.error || 'Falha no cadastro');
+    }
+  } catch (err) {
+    alert('Erro de conexão');
+    console.error(err);
+  }
+}
+
+// Checa se está logado ao carregar a página
+async function checkLogin() {
+  try {
+    const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/check', {
+      credentials: 'include'
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      usuario = data.user.username;
+      logado = true;
+      iniciarChat();
+    } else {
+      document.getElementById('auth-modal').style.display = 'flex';
+    }
+  } catch {
+    document.getElementById('auth-modal').style.display = 'flex';
+  }
+}
+
+// Chamar no carregamento da página
 document.addEventListener('DOMContentLoaded', () => {
   checkLogin();
-
-  // Evento submit para o formulário do chat
-  promptRow.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (!currentUser) {
-      alert('Você precisa estar logado para enviar mensagens.');
-      return;
-    }
-    const text = msgInput.value;
-    sendMessage(text);
-  });
 });
