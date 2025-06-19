@@ -3,224 +3,43 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Corujão Terminal</title>
-  <link href="https://fonts.googleapis.com/css2?family=Electrolize&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="/css/style.css"/>
+  <title>Corujão Rank</title>
   <style>
-    /* Estilos do modal de login/cadastro */
-    #auth-modal {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.8);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    #auth-form {
-      background: #1a1a1a;
-      padding: 2rem;
-      border-radius: 5px;
-      border: 1px solid #4CAF50;
-      width: 300px;
-    }
-    #auth-form h3 {
-      color: #4CAF50;
-      margin-top: 0;
-    }
-    #auth-form input {
-      width: 100%;
-      padding: 8px;
-      margin-bottom: 10px;
-      background: #222;
-      color: #fff;
-      border: 1px solid #333;
-    }
-    #auth-form button {
-      width: 100%;
-      padding: 8px;
-      background: #4CAF50;
-      color: white;
-      border: none;
-      cursor: pointer;
-      margin-bottom: 10px;
-    }
-    .auth-tabs {
-      display: flex;
-      margin-bottom: 15px;
-    }
-    .auth-tab {
-      flex: 1;
-      text-align: center;
-      padding: 8px;
-      cursor: pointer;
-      background: #333;
-    }
-    .auth-tab.active {
-      background: #4CAF50;
-    }
-    
-    /* Novas classes para o terminal.js */
-    .msg-voce { color: #4CAF50; }
-    .msg-corujao { color: #fff; }
-    .terminal-erro { color: #f44336; }
-    .terminal-info { color: #2196F3; }
-    .terminal-success { color: #4CAF50; }
-    .nick { color: #FF9800; }
-    .nick.self { color: #4CAF50; font-weight: bold; }
-    .nick.admin { color: #f44336; }
-    .hora { color: #9E9E9E; }
+    body { background: #111; color: white; font-family: sans-serif; margin: 0; padding: 20px; }
+    #messages { list-style: none; padding: 0; }
+    #messages li { margin: 5px 0; padding: 5px; background: #222; border-radius: 5px; }
+    input { border: none; padding: 10px; width: 80%; border-radius: 5px; }
+    button { padding: 10px; background: #4caf50; color: white; border: none; border-radius: 5px; }
+    form { display: flex; gap: 10px; margin-top: 20px; }
   </style>
 </head>
 <body>
-  <!-- Modal de Login/Cadastro -->
-  <div id="auth-modal">
-    <div id="auth-form">
-      <h3>🦉 Corujão Terminal</h3>
-      <div class="auth-tabs">
-        <div class="auth-tab active" onclick="switchAuthTab('login')">Login</div>
-        <div class="auth-tab" onclick="switchAuthTab('register')">Cadastro</div>
-      </div>
-      
-      <div id="login-form">
-        <input type="text" id="login-username" placeholder="Nome de usuário"/>
-        <input type="password" id="login-password" placeholder="Senha"/>
-        <button onclick="handleLogin()">Entrar</button>
-      </div>
-      
-      <div id="register-form" style="display: none;">
-        <input type="text" id="register-username" placeholder="Escolha um nome de usuário"/>
-        <input type="password" id="register-password" placeholder="Crie uma senha"/>
-        <input type="password" id="register-confirm" placeholder="Confirme a senha"/>
-        <button onclick="handleRegister()">Cadastrar</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="layout">
-    <!-- Sidebar Esquerda - Amigos e Salas -->
-    <div id="sidebar-esq">
-      <div class="sidebar-titulo">Amigos Online</div>
-      <ul id="lista-amigos">
-        <!-- Lista será preenchida dinamicamente -->
-      </ul>
-      
-      <div class="sidebar-titulo">Salas Ativas</div>
-      <ul id="lista-salas">
-        <!-- Lista será preenchida dinamicamente -->
-      </ul>
-    </div>
-
-    <!-- Área Central - Chat -->
-    <div id="main">
-      <div id="chat-central">
-        <div id="terminal-header">
-          🦉 Corujão Terminal v3.0 | Seja bem-vindo!
-        </div>
-        
-        <div id="terminal-corujao"></div>
-        
-        <div id="terminal-bar">
-          <form id="prompt-row" autocomplete="off">
-            <span id="terminal-nick">visitante</span>
-            <span id="prompt-colon">:</span>
-            <input type="text" id="msg" placeholder="Digite sua mensagem..." maxlength="300" autofocus />
-          </form>
-        </div>
-      </div>
-    </div>
-
-    <!-- Sidebar Direita - Eventos -->
-    <div id="sidebar-dir">
-      <div class="sidebar-titulo">Eventos Ativos</div>
-      <ul>
-        <li onclick="eventoPainel('Torneio Noturno', 'event-torneio')">Torneio Noturno</li>
-        <li onclick="eventoPainel('Desafio Diário', 'event-desafio')">Desafio Diário</li>
-        <li onclick="eventoPainel('Quiz KOF', 'event-quiz')">Quiz KOF</li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- Rodapé Fixo -->
-  <div id="footer">
-    <span class="cmd" onclick="comandoRapido('/ajuda')">/ajuda</span>
-    <span class="cmd" onclick="comandoRapido('/amigos')">/amigos</span>
-    <span class="cmd" onclick="comandoRapido('/salas')">/salas</span>
-    <span class="cmd" onclick="comandoRapido('/ranking')">/ranking</span>
-    <span class="cmd" onclick="comandoRapido('/limpar')">/limpar</span>
-    
-    <div id="footer-theme-switch">
-      <div class="theme-dot dark selected" title="Tema escuro" onclick="mudarTema('escuro')"></div>
-      <div class="theme-dot light" title="Tema claro" onclick="mudarTema('claro')"></div>
-    </div>
-  </div>
-
-  <!-- Scripts -->
+  <h1>💬 Corujão Rank</h1>
+  <ul id="messages"></ul>
+  <form id="form">
+    <input id="input" autocomplete="off" placeholder="Digite sua mensagem..." />
+    <button>Enviar</button>
+  </form>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-  <script src="/js/terminal.js"></script>
-
   <script>
-    // Configurações
-    const API_BASE = 'https://corujao-rank-production.up.railway.app';
-    const AUTH_API = `${API_BASE}/api/auth`;
-    
-    // Funções de UI que complementam o terminal.js
-    function switchAuthTab(tab) {
-      document.getElementById('login-form').style.display = tab === 'login' ? 'block' : 'none';
-      document.getElementById('register-form').style.display = tab === 'register' ? 'block' : 'none';
-      
-      document.querySelectorAll('.auth-tab').forEach(el => {
-        el.classList.toggle('active', el.textContent.toLowerCase() === tab);
-      });
-    }
+    const socket = io();
+    const form = document.getElementById('form');
+    const input = document.getElementById('input');
+    const messages = document.getElementById('messages');
 
-    function eventoPainel(texto, classe) {
-      const terminal = document.getElementById('terminal-corujao');
-      if (!terminal) return;
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      if (input.value.trim()) {
+        socket.emit('chat message', input.value);
+        input.value = '';
+      }
+    });
 
-      const hora = new Date().toLocaleTimeString('pt-BR').slice(0,5);
-      const div = document.createElement('div');
-      div.className = "terminal-info";
-      div.innerHTML = `[${hora}] <span class="${classe}">${texto}</span> – veja detalhes ou participe!`;
-      terminal.appendChild(div);
-      terminal.scrollTop = terminal.scrollHeight;
-    }
-
-    function mudarTema(tema) {
-      document.documentElement.classList.toggle('claro', tema === 'claro');
-      document.querySelectorAll('.theme-dot').forEach(dot => {
-        dot.classList.toggle('selected', 
-          (tema === 'escuro' && dot.classList.contains('dark')) || 
-          (tema === 'claro' && dot.classList.contains('light'))
-        );
-      });
-    }
-
-    function comandoRapido(cmd) {
-      const input = document.getElementById('msg');
-      input.value = cmd;
-      input.focus();
-    }
-
-    // Inicialização
-    document.addEventListener('DOMContentLoaded', () => {
-      // Verifica se já está logado (código original preservado)
-      axios.get(`${AUTH_API}/check`, { withCredentials: true })
-        .then(response => {
-          if (response.data.success) {
-            document.getElementById('auth-modal').style.display = 'none';
-            document.getElementById('terminal-nick').textContent = response.data.user.username;
-          } else {
-            document.getElementById('auth-modal').style.display = 'flex';
-          }
-        })
-        .catch(() => {
-          document.getElementById('auth-modal').style.display = 'flex';
-        });
+    socket.on('chat message', function(msg) {
+      const li = document.createElement('li');
+      li.textContent = msg;
+      messages.appendChild(li);
+      window.scrollTo(0, document.body.scrollHeight);
     });
   </script>
 </body>
