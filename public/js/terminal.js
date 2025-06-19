@@ -1,21 +1,14 @@
-// terminal.js
+const socket = io();  // Conexão com Socket.io do servidor
 
-const socket = io();  // Conecta ao socket.io do servidor
-
-let usuario = null; // Usuário logado
+let usuario = null;
 let logado = false;
 
-// Função que inicia o chat depois do login
 function iniciarChat() {
   if (!usuario) return;
 
-  // Atualiza o nick na interface
   document.getElementById('terminal-nick').textContent = usuario;
-
-  // Esconde modal
   document.getElementById('auth-modal').style.display = 'none';
 
-  // Aqui você pode carregar mensagens antigas ou avisos
   appendMensagemSistema(`Bem-vindo(a), ${usuario}!`);
 
   // Ouvir mensagens do servidor
@@ -35,7 +28,6 @@ function iniciarChat() {
   };
 }
 
-// Função que mostra mensagens no terminal
 function appendMensagem(usuarioMsg, texto, hora) {
   const terminal = document.getElementById('terminal-corujao');
   const horaFormat = hora || new Date().toLocaleTimeString().slice(0, 5);
@@ -54,7 +46,6 @@ function appendMensagemSistema(texto) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
-// Login com chamada API
 async function handleLogin() {
   const username = document.getElementById('login-username').value.trim();
   const password = document.getElementById('login-password').value;
@@ -67,7 +58,7 @@ async function handleLogin() {
   try {
     const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/login', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ username, password })
     });
@@ -78,6 +69,7 @@ async function handleLogin() {
       usuario = username;
       logado = true;
       iniciarChat();
+      alert('Login efetuado com sucesso!');
     } else {
       alert(data.error || 'Falha no login');
     }
@@ -87,7 +79,6 @@ async function handleLogin() {
   }
 }
 
-// Cadastro com chamada API
 async function handleRegister() {
   const username = document.getElementById('register-username').value.trim();
   const password = document.getElementById('register-password').value;
@@ -105,7 +96,7 @@ async function handleRegister() {
   try {
     const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/register', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
 
@@ -123,7 +114,6 @@ async function handleRegister() {
   }
 }
 
-// Checa se está logado ao carregar a página
 async function checkLogin() {
   try {
     const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/check', {
@@ -142,7 +132,6 @@ async function checkLogin() {
   }
 }
 
-// Chamar no carregamento da página
 document.addEventListener('DOMContentLoaded', () => {
   checkLogin();
 });
