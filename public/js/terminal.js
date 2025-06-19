@@ -1,22 +1,29 @@
-const socket = io();  // Conexão com Socket.io do servidor
+// terminal.js
 
-let usuario = null;
-let logado = false;
+// Conecta ao socket.io com URL explícita e websocket só
+const socket = io('https://corujao-rank-production.up.railway.app', { transports: ['websocket'] });
 
+let usuario = null; // Usuário logado
+
+// Inicia chat após login
 function iniciarChat() {
   if (!usuario) return;
 
+  // Atualiza nick na interface (logo antes do input, conforme seu HTML)
   document.getElementById('terminal-nick').textContent = usuario;
+
+  // Esconde modal login/cadastro
   document.getElementById('auth-modal').style.display = 'none';
 
+  // Mensagem de boas-vindas no terminal
   appendMensagemSistema(`Bem-vindo(a), ${usuario}!`);
 
-  // Ouvir mensagens do servidor
+  // Ouve mensagens do servidor
   socket.on('novaMensagem', msg => {
     appendMensagem(msg.usuario, msg.texto, msg.hora);
   });
 
-  // Enviar mensagem
+  // Envio de mensagem via form
   const form = document.getElementById('prompt-row');
   form.onsubmit = e => {
     e.preventDefault();
@@ -28,6 +35,7 @@ function iniciarChat() {
   };
 }
 
+// Append mensagem no terminal
 function appendMensagem(usuarioMsg, texto, hora) {
   const terminal = document.getElementById('terminal-corujao');
   const horaFormat = hora || new Date().toLocaleTimeString().slice(0, 5);
@@ -37,6 +45,7 @@ function appendMensagem(usuarioMsg, texto, hora) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
+// Append mensagem sistema (info)
 function appendMensagemSistema(texto) {
   const terminal = document.getElementById('terminal-corujao');
   const div = document.createElement('div');
@@ -46,6 +55,7 @@ function appendMensagemSistema(texto) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
+// Login via API
 async function handleLogin() {
   const username = document.getElementById('login-username').value.trim();
   const password = document.getElementById('login-password').value;
@@ -60,16 +70,14 @@ async function handleLogin() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password }),
     });
 
     const data = await res.json();
 
     if (res.ok) {
       usuario = username;
-      logado = true;
       iniciarChat();
-      alert('Login efetuado com sucesso!');
     } else {
       alert(data.error || 'Falha no login');
     }
@@ -79,6 +87,7 @@ async function handleLogin() {
   }
 }
 
+// Cadastro via API
 async function handleRegister() {
   const username = document.getElementById('register-username').value.trim();
   const password = document.getElementById('register-password').value;
@@ -97,7 +106,7 @@ async function handleRegister() {
     const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password }),
     });
 
     const data = await res.json();
@@ -114,15 +123,15 @@ async function handleRegister() {
   }
 }
 
+// Verifica login ao carregar página
 async function checkLogin() {
   try {
     const res = await fetch('https://corujao-rank-production.up.railway.app/api/auth/check', {
-      credentials: 'include'
+      credentials: 'include',
     });
     const data = await res.json();
     if (res.ok && data.success) {
       usuario = data.user.username;
-      logado = true;
       iniciarChat();
     } else {
       document.getElementById('auth-modal').style.display = 'flex';
@@ -132,6 +141,18 @@ async function checkLogin() {
   }
 }
 
+// Carregar página: verificar login
 document.addEventListener('DOMContentLoaded', () => {
   checkLogin();
 });
+
+// Expor funções globais para HTML chamar
+window.handleLogin = handleLogin;
+window.handleRegister = handleRegister;
+window.switchAuthTab = function(tab) {
+  document.getElementById('login-form').style.display = tab === 'login' ? 'block' : 'none';
+  document.getElementById('register-form').style.display = tab === 'register' ? 'block' : 'none';
+  document.querySelectorAll('.auth-tab').forEach(el => {
+    el.classList.toggle('active', el.textContent.toLowerCase() === tab);
+  });
+};
